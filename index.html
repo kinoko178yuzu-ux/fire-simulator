@@ -1142,6 +1142,32 @@ select:focus { border-color: var(--teal); }
                 <div class="input-group"><input type="number" id="bonusInvest" value="50" min="0" step="10"><span class="unit">万/年</span></div></div>
             </div>
           </div>
+          <div class="subsection">
+            <div class="subsection-title">— 副業収入（FIRE後）</div>
+            <div class="field">
+              <div class="field-row"><span class="field-label">副収入（額面・経費前）</span></div>
+              <div class="input-group"><input type="number" id="sideIncomeGross" value="180" min="0" step="10"><span class="unit">万/年</span></div>
+            </div>
+            <div class="field">
+              <div class="field-row"><span class="field-label">経費率</span>
+                <span class="field-value"><span id="sideExpenseRatioVal">30</span>%</span></div>
+              <input type="range" id="sideExpenseRatio" value="30" min="0" max="80" step="5">
+              <div class="help">手取り＝額面×(1−経費率)。フリーランス・YouTube等は30〜50%が目安</div>
+            </div>
+            <div class="row2">
+              <div class="field">
+                <div class="field-row"><span class="field-label">終了年齢</span></div>
+                <div class="input-group"><input type="number" id="sideIncomeEndAge" value="70" min="0" max="100" step="1"><span class="unit">歳まで</span></div>
+                <p class="desc" style="font-size:10px;">0 = 生涯継続</p>
+              </div>
+              <div class="field">
+                <div class="field-row"><span class="field-label">手取り（自動計算）</span></div>
+                <div class="input-group" style="background:var(--teal-bg);padding:8px 10px;">
+                  <span class="mono" style="font-size:13px;font-weight:600;color:var(--teal-deep);" id="sideIncomeNetDisp">--</span>
+                </div>
+              </div>
+            </div>
+          </div>
 
           <div class="subsection">
             <div class="subsection-title">— FIRE目標年齢（3シナリオ比較）</div>
@@ -1227,7 +1253,7 @@ select:focus { border-color: var(--teal); }
         <!-- 生活 -->
         <div class="tab-panel" id="tab-life">
           <h3>FIRE後の生活費</h3>
-          <p class="desc">住宅費を除く月額生活費・副収入・インフレ率</p>
+          <p class="desc">住宅費を除く月額生活費・インフレ率。副業収入は 01 基本タブで設定。</p>
           <div class="subsection">
             <div class="subsection-title">— 生活費(住宅費を除く)</div>
             <div class="field">
@@ -1238,23 +1264,6 @@ select:focus { border-color: var(--teal); }
               <div class="field-row"><span class="field-label">特別費(年単位の不定期支出)</span></div>
               <div class="input-group"><input type="number" id="annualSpecial" value="50" min="0" step="5"><span class="unit">万/年</span></div>
               <div class="help">車検・固定資産税・旅行・冠婚葬祭・家電買い替え</div>
-            </div>
-          </div>
-          <div class="subsection">
-            <div class="subsection-title">— 副収入</div>
-            <div class="field">
-              <div class="field-row"><span class="field-label">副収入(額面・経費前)</span></div>
-              <div class="input-group"><input type="number" id="sideIncomeGross" value="180" min="0" step="10"><span class="unit">万/年</span></div>
-            </div>
-            <div class="field">
-              <div class="field-row"><span class="field-label">経費率</span>
-                <span class="field-value"><span id="sideExpenseRatioVal">30</span>%</span></div>
-              <input type="range" id="sideExpenseRatio" value="30" min="0" max="80" step="5">
-            </div>
-            <div class="field">
-              <div class="field-row"><span class="field-label">副収入 終了年齢</span></div>
-              <div class="input-group"><input type="number" id="sideIncomeEndAge" value="70" min="0" max="100" step="1"><span class="unit">歳まで</span></div>
-              <p class="desc">0 = 生涯継続</p>
             </div>
           </div>
           <div class="subsection">
@@ -2359,6 +2368,8 @@ function readParams() {
   const totalAssets   = assetCash + assetIndex + assetDividend;
   const totalEl = document.getElementById('assetTotal');
   if (totalEl) totalEl.textContent = `${(totalAssets/10000).toLocaleString()} 万円`;
+  const sideNetDispEl = document.getElementById('sideIncomeNetDisp');
+  if (sideNetDispEl) sideNetDispEl.textContent = `${(sideNet/10000).toFixed(1)} 万/年`;
   inputs.currentAssets.value = totalAssets / 10000;
 
   return {
