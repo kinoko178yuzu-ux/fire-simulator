@@ -1131,6 +1131,11 @@ select:focus { border-color: var(--teal); }
               <div class="field-row"><span class="field-label">現在の年収(額面)</span></div>
               <div class="input-group"><input type="number" id="currentSalary" value="606" min="0" step="10"><span class="unit">万円</span></div>
               <div class="help">退職翌年の住民税ショック試算に使用</div>
+              <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <span style="font-size:11px;color:var(--ink-mute);">手取り概算：</span>
+                <span id="salaryNetDisp" style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:var(--teal-deep);background:var(--teal-bg);padding:2px 10px;">--</span>
+                <span id="salaryNetRate" style="font-size:10px;color:var(--ink-mute);"></span>
+              </div>
             </div>
           </div>
           <div class="subsection">
@@ -2370,6 +2375,22 @@ function readParams() {
   if (totalEl) totalEl.textContent = `${(totalAssets/10000).toLocaleString()} 万円`;
   const sideNetDispEl = document.getElementById('sideIncomeNetDisp');
   if (sideNetDispEl) sideNetDispEl.textContent = `${(sideNet/10000).toFixed(1)} 万/年`;
+
+  /** ★ 給与手取り概算（社保約15% + 所得税 + 住民税） */
+  const grossSalary = +inputs.currentSalary.value * 10000;
+  if (grossSalary > 0) {
+    const socialIns    = grossSalary * 0.15;
+    const taxableInc   = Math.max(salaryToIncome(grossSalary) - socialIns - 480000 - 380000, 0);
+    const incTax       = calcIncomeTax(taxableInc) * 1.021;
+    const resTax       = taxableInc * 0.10 + 5000;
+    const netSalary    = grossSalary - socialIns - Math.max(incTax, 0) - Math.max(resTax, 0);
+    const netMan       = Math.round(netSalary / 10000);
+    const takeHomeRate = Math.round((netSalary / grossSalary) * 100);
+    const dispEl  = document.getElementById('salaryNetDisp');
+    const rateEl  = document.getElementById('salaryNetRate');
+    if (dispEl) dispEl.textContent = `約 ${netMan.toLocaleString()} 万円`;
+    if (rateEl) rateEl.textContent = `(手取率 ${takeHomeRate}% / 月${Math.round(netMan/12)}万)`;
+  }
   inputs.currentAssets.value = totalAssets / 10000;
 
   return {
