@@ -9,6 +9,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<!-- Firebase（クラウド同期用） -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+/* ===================================================================
+ *  🔧 Firebase 設定 — ここにあなたのプロジェクトの config を貼り付け
+ *  （手順は別途案内。projectId が空のままだとクラウド同期は無効、
+ *    アプリ自体はローカル保存だけで普通に動きます）
+ * =================================================================== */
+window.FIREBASE_CONFIG = {
+  apiKey:            "PASTE_API_KEY",
+  authDomain:        "PASTE_AUTH_DOMAIN",
+  projectId:         "PASTE_PROJECT_ID",
+  storageBucket:     "PASTE_STORAGE_BUCKET",
+  messagingSenderId: "PASTE_SENDER_ID",
+  appId:             "PASTE_APP_ID"
+};
+</script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -117,6 +135,16 @@ header {
 .btn-primary:hover { background: var(--teal-deep); border-color: var(--teal-deep); }
 .btn-danger { color: var(--rose); }
 .btn-danger:hover { color: #fff; background: var(--rose); border-color: var(--rose); }
+.btn-cloud { display: inline-flex; align-items: center; gap: 6px; }
+.sync-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; flex-shrink: 0;
+  background: var(--ink-mute);
+}
+.sync-dot.off    { background: #c2c2c2; }
+.sync-dot.on     { background: #2eb872; box-shadow: 0 0 0 3px rgba(46,184,114,0.18); }
+.sync-dot.saving { background: var(--amber); }
+.sync-dot.error  { background: var(--rose); }
 
 /** ============== レイアウト ============== */
 .layout {
@@ -148,14 +176,16 @@ header {
     gap: 10px;
   }
   .title-block .eyebrow { font-size: 9px; letter-spacing: 0.12em; }
-  .title-block h1 { font-size: 22px; line-height: 1.1; }
+  .title-block h1 { font-size: 21px; line-height: 1.1; }
   .title-block .subtitle { font-size: 10.5px; }
-  .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  /** ボタンは2×2グリッドで大きめタップ領域 */
+  .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
   .actions .btn {
-    padding: 10px 4px;
-    font-size: 11px;
+    padding: 12px 6px;
+    font-size: 12px;
     width: 100%;
     letter-spacing: 0;
+    justify-content: center;
   }
 
   .layout { gap: 10px; }
@@ -167,21 +197,18 @@ header {
     max-height: none;
   }
 
-  /** タブ: 横スクロールのヒント表示 */
+  /** タブ: 全タブを折り返して表示（横スクロール廃止＝全機能が見える） */
   .tabs {
-    -webkit-overflow-scrolling: touch;
-    scroll-snap-type: x mandatory;
-    /** 右端にグラデーションでスクロール可能を示唆 */
-    background: linear-gradient(to right, var(--bg-subtle) 90%, rgba(240,237,229,0.5) 100%);
+    flex-wrap: wrap;
+    overflow-x: visible;
   }
   .tab {
-    min-width: 64px;
-    padding: 11px 6px 10px;
+    flex: 1 0 18%;          /* 1行あたり約5タブ → 2段で9タブ全表示 */
+    min-width: 0;
+    padding: 9px 2px 8px;
     font-size: 10.5px;
-    scroll-snap-align: start;
-    flex: 0 0 auto;
   }
-  .tab .num { font-size: 9px; margin-right: 2px; }
+  .tab .num { font-size: 8.5px; margin-bottom: 1px; }
 
   .tab-panels {
     padding: 14px 12px 18px;
@@ -196,7 +223,7 @@ header {
   .field-value { font-size: 10.5px; padding: 1px 6px; }
   input[type="number"], select { font-size: 16px; padding: 9px 10px; } /** iOS zoom 防止 */
   .unit { font-size: 11px; min-width: 24px; }
-  .help { font-size: 10.5px; margin-top: 3px; }
+  .help { font-size: 11px; margin-top: 3px; line-height: 1.5; }
 
   /** 2列レイアウトを維持しつつ余白を最小化 */
   .row2 { gap: 6px; }
@@ -262,8 +289,20 @@ header {
     table-layout: fixed; /** はみ出し防止 */
     word-break: break-all;
   }
-  .compare-table th { font-size: 9px; padding: 6px 2px; letter-spacing: 0.04em; }
-  .compare-table td { padding: 6px 3px; }
+  .compare-table th { font-size: 9.5px; padding: 6px 3px; letter-spacing: 0; line-height: 1.35; }
+  .compare-table th span { font-size: 8.5px !important; }
+  .compare-table td { padding: 7px 3px; }
+  .compare-table .num { font-size: 11px; }
+
+  /** 計画購入リスト：金額/年齢を確保しつつ名前を広めに */
+  #spotEventList > div[style*="grid"] { gap: 4px !important; }
+  #spotEventList .spot-row { grid-template-columns: 1fr 46px 58px 44px 24px !important; gap: 4px !important; padding: 5px 5px !important; }
+  #spotEventList .spot-row input { font-size: 13px !important; padding: 7px 4px !important; }
+  #addSpotEventBtn { padding: 11px !important; font-size: 12.5px !important; }
+
+  /** 手取り・副収入の自動表示が折り返してもきれいに */
+  #salaryNetDisp, #sideIncomeNetDisp { font-size: 13px; }
+  #salaryNetRate { font-size: 10px; }
 
   /** ストレステスト行 */
   .stress-row {
@@ -300,11 +339,13 @@ header {
 }
 
 /** ========== 極小スマホ ========== */
-/** ========== 極小スマホ ========== */
 @media (max-width: 380px) {
-  .tab { min-width: 54px; font-size: 9.5px; padding: 10px 3px 9px; }
-  .result-main { font-size: 32px; }
-  .fail-rate-banner .num { font-size: 38px; }
+  .tab { flex: 1 0 30%; font-size: 9.5px; padding: 9px 2px 8px; }
+  .tab .num { font-size: 8px; }
+  .result-main { font-size: 30px; }
+  .fail-rate-banner .num { font-size: 36px; }
+  .actions .btn { font-size: 11px; padding: 11px 4px; }
+  #spotEventList .spot-row { grid-template-columns: 1fr 40px 52px 40px 22px !important; }
 }
 
 /** ============== 入力パネル ============== */
@@ -1047,12 +1088,43 @@ select:focus { border-color: var(--teal); }
       <div class="subtitle">社会保険完全版（介護保険・後期高齢者医療・年金繰り下げ対応）— 1000回試行で破綻確率を算出</div>
     </div>
     <div class="actions">
-      <button class="btn btn-primary" id="downloadBtn">💾 ダウンロード</button>
-      <button class="btn" id="uploadBtn">📂 アップロード</button>
+      <button class="btn btn-cloud" id="cloudSyncBtn">☁️ 同期 <span id="syncStatusDot" class="sync-dot off"></span></button>
+      <button class="btn btn-primary" id="downloadBtn">💾 保存</button>
+      <button class="btn" id="uploadBtn">📂 読込</button>
       <button class="btn btn-danger" id="resetBtn">初期化</button>
     </div>
     <input type="file" id="fileInput" accept=".json,application/json" style="display:none;">
   </header>
+
+  <!-- クラウド同期モーダル -->
+  <div class="modal-overlay hidden" id="syncModal">
+    <div class="modal" style="max-width:440px;">
+      <div class="modal-header">
+        <h2>☁️ クラウド同期</h2>
+        <button class="modal-close" id="syncModalClose">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          合言葉（パスフレーズ）を決めて入力してください。<b>PCとスマホで同じ合言葉</b>を入れると、入力データが自動で同期されます。
+        </p>
+        <div class="field">
+          <div class="field-row"><span class="field-label">合言葉</span></div>
+          <div class="input-group">
+            <input type="text" id="syncKeyInput" placeholder="例: yuzu-fire-7842" autocomplete="off" style="flex:1;font-family:'JetBrains Mono',monospace;">
+          </div>
+          <div class="help">推測されにくい文字列にしてください（英数字・ハイフン）。他人に教えなければ他デバイスから見られません。</div>
+        </div>
+        <div id="syncModalStatus" style="font-size:12px;margin-top:10px;min-height:18px;"></div>
+        <div id="syncUnavailableNote" style="display:none;font-size:11.5px;color:var(--rose);background:var(--rose-bg);padding:10px;margin-top:10px;border-radius:3px;line-height:1.6;">
+          ⚠️ Firebase が未設定のため、クラウド同期は使えません。HTML の <code>FIREBASE_CONFIG</code> に設定を貼り付けてください。
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn" id="syncDisconnectBtn" style="display:none;">同期を解除</button>
+        <button class="btn btn-primary" id="syncConnectBtn" style="flex:1;">このデバイスを同期する</button>
+      </div>
+    </div>
+  </div>
 
   <div class="layout">
     <!-- 入力パネル -->
@@ -1970,6 +2042,7 @@ function syncSpotEventsJson() {
   const arr = getSpotEventsFromUI();
   document.getElementById('spotEventsJson').value = JSON.stringify(arr);
   if (typeof calculate === 'function') calculate();
+  if (typeof debouncedSave === 'function' && !isApplyingCloud) debouncedSave();
 }
 
 function addSpotEventRow(ev = { name:'', age:50, amount:100, repeat:0 }) {
@@ -2072,6 +2145,7 @@ function loadData() {
       document.querySelector(`[data-loan-payoff="${data._loanPayoffToggle}"]`)?.classList.add('active');
     }
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
+    if (typeof renderSpotEvents === 'function') renderSpotEvents();
     calculate(); showToast('読み込みました');
   } catch(e) { showToast('読込に失敗'); }
 }
@@ -2118,6 +2192,168 @@ function handleFileUpload(e) {
 document.getElementById('downloadBtn').addEventListener('click', downloadJSON);
 document.getElementById('uploadBtn').addEventListener('click', uploadJSON);
 document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+
+/** ============================
+ *  ☁️ Firebase クラウド同期
+ *  ============================ */
+const SYNC_KEY_STORAGE = 'fireSync_passphrase';
+let fbDb = null;
+let fbAvailable = false;
+let syncPassphrase = localStorage.getItem(SYNC_KEY_STORAGE) || '';
+let cloudUnsub = null;
+let isApplyingCloud = false;   // クラウド適用中はローカル→クラウド保存を抑止
+let cloudSaveTimer = null;
+
+function initFirebase() {
+  const cfg = window.FIREBASE_CONFIG || {};
+  if (!cfg.projectId || cfg.projectId === 'PASTE_PROJECT_ID') { fbAvailable = false; return; }
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(cfg);
+    fbDb = firebase.firestore();
+    fbAvailable = true;
+  } catch (e) { console.warn('Firebase init failed:', e); fbAvailable = false; }
+}
+
+/** 合言葉 → ドキュメントID（生の合言葉をパスに使わない） */
+function hashPassphrase(str) {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) h = ((h << 5) + h + str.charCodeAt(i)) >>> 0;
+  return 'doc_' + h.toString(16);
+}
+
+function gatherAllData() {
+  const data = {};
+  INPUT_IDS.forEach(id => { if (inputs[id]) data[id] = inputs[id].value; });
+  data._loanPayoffToggle = document.querySelector('.toggle-option.active')?.dataset.loanPayoff || 'yes';
+  return data;
+}
+
+function applyAllData(data) {
+  isApplyingCloud = true;
+  try {
+    INPUT_IDS.forEach(id => { if (data[id] !== undefined && inputs[id]) inputs[id].value = data[id]; });
+    if (data._loanPayoffToggle) {
+      document.querySelectorAll('.toggle-option').forEach(b => b.classList.remove('active'));
+      document.querySelector(`[data-loan-payoff="${data._loanPayoffToggle}"]`)?.classList.add('active');
+    }
+    document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
+    if (typeof renderSpotEvents === 'function') renderSpotEvents();  // 計画購入リストを再描画
+    calculate();
+  } finally {
+    isApplyingCloud = false;
+  }
+}
+
+function setSyncDot(state) {
+  const dot = document.getElementById('syncStatusDot');
+  if (dot) dot.className = 'sync-dot ' + state;
+}
+
+function setSyncModalStatus(msg, color) {
+  const el = document.getElementById('syncModalStatus');
+  if (el) { el.textContent = msg; el.style.color = color || 'var(--ink-soft)'; }
+}
+
+/** クラウドへ保存（デバウンス） */
+function cloudSaveDebounced() {
+  if (!fbAvailable || !syncPassphrase || isApplyingCloud) return;
+  clearTimeout(cloudSaveTimer);
+  setSyncDot('saving');
+  cloudSaveTimer = setTimeout(() => {
+    const data = gatherAllData();
+    data._updatedAt = Date.now();
+    fbDb.collection('fireSettings').doc(hashPassphrase(syncPassphrase)).set(data)
+      .then(() => setSyncDot('on'))
+      .catch(e => { console.warn(e); setSyncDot('error'); });
+  }, 1200);
+}
+
+/** リアルタイム購読を開始（他デバイスの変更を自動反映） */
+function startCloudSubscription() {
+  if (!fbAvailable || !syncPassphrase) return;
+  if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
+  cloudUnsub = fbDb.collection('fireSettings').doc(hashPassphrase(syncPassphrase))
+    .onSnapshot(
+      doc => {
+        // 自分の書き込みが反映されただけのときはスキップ
+        if (doc.metadata.hasPendingWrites) return;
+        if (doc.exists) { applyAllData(doc.data()); }
+        setSyncDot('on');
+      },
+      err => { console.warn('sync error', err); setSyncDot('error'); }
+    );
+}
+
+/** デバイスを同期に接続 */
+function connectSync() {
+  const input = document.getElementById('syncKeyInput');
+  const pass = (input.value || '').trim();
+  if (!pass) { setSyncModalStatus('合言葉を入力してください', 'var(--rose)'); return; }
+  if (!fbAvailable) { setSyncModalStatus('Firebase が未設定です', 'var(--rose)'); return; }
+  syncPassphrase = pass;
+  localStorage.setItem(SYNC_KEY_STORAGE, pass);
+
+  setSyncModalStatus('接続中...', 'var(--ink-soft)');
+  const ref = fbDb.collection('fireSettings').doc(hashPassphrase(pass));
+  ref.get().then(doc => {
+    if (doc.exists) {
+      // 既存データあり → 取り込む
+      applyAllData(doc.data());
+      setSyncModalStatus('✅ 同期しました（既存データを読み込み）', 'var(--green)');
+    } else {
+      // 新規 → 今の内容をアップロード
+      const data = gatherAllData(); data._updatedAt = Date.now();
+      ref.set(data);
+      setSyncModalStatus('✅ 同期を開始しました（このデバイスの内容を保存）', 'var(--green)');
+    }
+    setSyncDot('on');
+    startCloudSubscription();
+    updateSyncModalButtons();
+  }).catch(e => {
+    console.warn(e);
+    setSyncModalStatus('接続に失敗しました: ' + e.code, 'var(--rose)');
+    setSyncDot('error');
+  });
+}
+
+function disconnectSync() {
+  if (cloudUnsub) { cloudUnsub(); cloudUnsub = null; }
+  syncPassphrase = '';
+  localStorage.removeItem(SYNC_KEY_STORAGE);
+  setSyncDot('off');
+  setSyncModalStatus('同期を解除しました', 'var(--ink-mute)');
+  updateSyncModalButtons();
+}
+
+function updateSyncModalButtons() {
+  const connected = !!syncPassphrase;
+  document.getElementById('syncDisconnectBtn').style.display = connected ? 'block' : 'none';
+  document.getElementById('syncConnectBtn').textContent = connected ? '合言葉を更新して再同期' : 'このデバイスを同期する';
+}
+
+function openSyncModal() {
+  document.getElementById('syncModal').classList.remove('hidden');
+  document.getElementById('syncKeyInput').value = syncPassphrase;
+  document.getElementById('syncUnavailableNote').style.display = fbAvailable ? 'none' : 'block';
+  if (syncPassphrase) setSyncModalStatus('✅ このデバイスは同期中です', 'var(--green)');
+  else setSyncModalStatus('', '');
+  updateSyncModalButtons();
+}
+function closeSyncModal() { document.getElementById('syncModal').classList.add('hidden'); }
+
+/** 初期化＆イベント */
+initFirebase();
+document.getElementById('cloudSyncBtn').addEventListener('click', openSyncModal);
+document.getElementById('syncModalClose').addEventListener('click', closeSyncModal);
+document.getElementById('syncConnectBtn').addEventListener('click', connectSync);
+document.getElementById('syncDisconnectBtn').addEventListener('click', disconnectSync);
+document.getElementById('syncModal').addEventListener('click', (e) => { if (e.target.id === 'syncModal') closeSyncModal(); });
+
+/** 起動時：合言葉が保存済みなら自動で同期再開 */
+if (fbAvailable && syncPassphrase) {
+  setSyncDot('on');
+  startCloudSubscription();
+}
 
 /** ============================
  *  住宅ローン計算
@@ -3698,7 +3934,11 @@ function drawAssetChart(mcResult, requiredAvg, params) {
 
 /** イベントリスナー */
 let saveTimer = null;
-function debouncedSave() { clearTimeout(saveTimer); saveTimer = setTimeout(saveDataSilent, 500); }
+function debouncedSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveDataSilent, 500);
+  if (typeof cloudSaveDebounced === 'function') cloudSaveDebounced();
+}
 for (const id of INPUT_IDS) {
   if (inputs[id]) {
     inputs[id].addEventListener('input',  () => { calculate(); debouncedSave(); });
