@@ -3002,19 +3002,12 @@ function runMonteCarlo(params, fireYear, trials) {
 }
 
 function findSafeAssets(params, fireYear, targetFailRate, trials) {
-  // 精度確保: 少なくとも500試行を使う（1%目標で5件の失敗 = 統計的に安定）
-  const searchTrials = Math.max(trials, 500);
-  // 探索範囲: 0.3× ～ 3×（極端に広い範囲を避ける）
-  let low = params.startAssets * 0.3, high = params.startAssets * 3;
-  // 3×でも失敗率が目標を超える場合はさらに上限を広げる
-  const testHigh = { ...params, startAssets: high, currentAssets: high };
-  if (runMonteCarlo(testHigh, fireYear, Math.min(searchTrials, 300)).failRate > targetFailRate) {
-    high = params.startAssets * 6; // 上限を拡張
-  }
-  for (let iter = 0; iter < 12; iter++) {  // 8→12回で精度向上
+  const searchTrials = Math.max(Math.min(trials, 500), 300); // 300〜500試行で安定した推定
+  let low = params.startAssets * 0.3, high = params.startAssets * 4;
+  for (let iter = 0; iter < 12; iter++) {
     const mid = (low + high) / 2;
     const p = { ...params, startAssets: mid, currentAssets: mid };
-    if (runMonteCarlo(p, fireYear, Math.min(searchTrials, 400)).failRate <= targetFailRate) high = mid;
+    if (runMonteCarlo(p, fireYear, searchTrials).failRate <= targetFailRate) high = mid;
     else low = mid;
   }
   return high;
@@ -3722,18 +3715,29 @@ async function runSimulation() {
   for (let y = 0; y < fireYear; y++) projAssets = projAssets*(1+netReturnAcc) + annualInvest;
   projAssets += params.taishokin;
 
-  /** ★ FIRE時点での厚生年金加入年数を正しく設定（現時点でなくFIRE時点の値） */
+  /** ★ fireParamsはFIRE時点の年齢・家族状況に進めてから構築
+   *  （これをしないと「39歳が即リタイア」として子供の教育費・ローンが全部退職後に計上される） */
+  const fireAge = params.startAgeOriginal + fireYear;
   const kouseiYearsAtFire = params.kouseiYearsCurrent + fireYear;
+  const loanPayoffYear    = getPayoffYear(params, fireYear);  // 繰上返済年もFIRE基準に調整
   const fireParams = {
     ...params,
-    startAssets: projAssets,
-    currentAssets: projAssets,
-    kouseiYearsCurrent: kouseiYearsAtFire,   // 年金計算をFIRE時点に補正
+    startAssets:        projAssets,
+    currentAssets:      projAssets,
+    startAge:           fireAge,
+    startAgeOriginal:   fireAge,                                 // ← 核心の修正
+    ageWife:            params.ageWifeOriginal  + fireYear,
+    ageWifeOriginal:    params.ageWifeOriginal  + fireYear,
+    childAgesAt:        params.childAgesOriginal.map(a => a + fireYear),
+    childAgesOriginal:  params.childAgesOriginal.map(a => a + fireYear),
+    kouseiYearsCurrent: kouseiYearsAtFire,
+    // ローン残高をFIRE時点の値に更新
+    loanBalance:        Math.max(loanBalanceAfter(
+                          params.loanBalance, params.loanMonthly,
+                          params.loanBonus, params.loanRate, fireYear), 0),
+    taxCreditYears:     Math.max(params.taxCreditYears - fireYear, 0),
   };
   const baseResult = runMonteCarlo(fireParams, 0, trials);
-
-  /** グラフ上部の説明ラベルを更新 */
-  const fireAge = params.startAgeOriginal + fireYear;
   const scenarioNames = { '1':'① 早期FIRE', '2':'② 標準FIRE', '3':'③ 余裕FIRE' };
   const scenarioLabel = params.fireMode === 'target'
     ? `${fireAge}歳（目標年齢）`
