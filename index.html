@@ -1699,8 +1699,13 @@ select:focus { border-color: var(--teal); }
           <p class="desc">破綻確率の許容水準とシミュレーション設定</p>
           <div class="field">
             <div class="field-row"><span class="field-label">許容破綻確率</span>
-              <span class="field-value"><span id="targetFailRateVal">1.0</span>%</span></div>
-            <input type="range" id="targetFailRate" value="1" min="0.1" max="10" step="0.1">
+              <span class="field-value"><span id="targetFailRateVal">5.0</span>%</span></div>
+            <input type="range" id="targetFailRate" value="5" min="0.5" max="20" step="0.5">
+            <div class="help">
+              <b>5%（推奨）</b>: 4%ルールに相当。歴史上ほぼすべての30年以上の期間で成功<br>
+              2%: 非常に保守的。必要資産額が大幅に増加<br>
+              10%: 柔軟対応前提（支出削減できる人向け）
+            </div>
           </div>
           <div class="field">
             <div class="field-row"><span class="field-label">モンテカルロ試行回数</span></div>
@@ -2997,11 +3002,19 @@ function runMonteCarlo(params, fireYear, trials) {
 }
 
 function findSafeAssets(params, fireYear, targetFailRate, trials) {
-  let low = params.startAssets * 0.5, high = params.startAssets * 5;
-  for (let iter = 0; iter < 8; iter++) {
+  // 精度確保: 少なくとも500試行を使う（1%目標で5件の失敗 = 統計的に安定）
+  const searchTrials = Math.max(trials, 500);
+  // 探索範囲: 0.3× ～ 3×（極端に広い範囲を避ける）
+  let low = params.startAssets * 0.3, high = params.startAssets * 3;
+  // 3×でも失敗率が目標を超える場合はさらに上限を広げる
+  const testHigh = { ...params, startAssets: high, currentAssets: high };
+  if (runMonteCarlo(testHigh, fireYear, Math.min(searchTrials, 300)).failRate > targetFailRate) {
+    high = params.startAssets * 6; // 上限を拡張
+  }
+  for (let iter = 0; iter < 12; iter++) {  // 8→12回で精度向上
     const mid = (low + high) / 2;
     const p = { ...params, startAssets: mid, currentAssets: mid };
-    if (runMonteCarlo(p, fireYear, Math.min(trials, 200)).failRate <= targetFailRate) high = mid;
+    if (runMonteCarlo(p, fireYear, Math.min(searchTrials, 400)).failRate <= targetFailRate) high = mid;
     else low = mid;
   }
   return high;
@@ -3709,7 +3722,14 @@ async function runSimulation() {
   for (let y = 0; y < fireYear; y++) projAssets = projAssets*(1+netReturnAcc) + annualInvest;
   projAssets += params.taishokin;
 
-  const fireParams = { ...params, startAssets: projAssets, currentAssets: projAssets };
+  /** ★ FIRE時点での厚生年金加入年数を正しく設定（現時点でなくFIRE時点の値） */
+  const kouseiYearsAtFire = params.kouseiYearsCurrent + fireYear;
+  const fireParams = {
+    ...params,
+    startAssets: projAssets,
+    currentAssets: projAssets,
+    kouseiYearsCurrent: kouseiYearsAtFire,   // 年金計算をFIRE時点に補正
+  };
   const baseResult = runMonteCarlo(fireParams, 0, trials);
 
   /** グラフ上部の説明ラベルを更新 */
