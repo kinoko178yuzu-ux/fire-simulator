@@ -1744,11 +1744,14 @@ select:focus { border-color: var(--teal); }
       </div>
 
       <div class="recommend" id="recommendBox">
-        <h3>破綻確率1%以下にするための推奨資産</h3>
+        <h3 id="recommendBoxTitle">破綻確率5%以下にするための安全資産ライン</h3>
+        <div style="font-size:11px;color:var(--ink-mute);margin-bottom:12px;line-height:1.6;">
+          Monte Carlo 1000回の結果。「FIRE時の予測資産」と比べて<strong id="safetyGapNote">--</strong>
+        </div>
         <div class="grid">
-          <div class="item"><div class="label">必要資産額</div><div class="val" id="safeAssets">--</div></div>
-          <div class="item"><div class="label">余裕係数</div><div class="val" id="safetyMargin">--</div></div>
-          <div class="item"><div class="label">達成年齢</div><div class="val" id="safeAge">--</div></div>
+          <div class="item"><div class="label">安全FIRE必要資産</div><div class="val" id="safeAssets">--</div></div>
+          <div class="item"><div class="label">予測資産との比率</div><div class="val" id="safetyMargin">--</div></div>
+          <div class="item"><div class="label">安全ライン達成年齢</div><div class="val" id="safeAge">--</div></div>
         </div>
       </div>
 
@@ -1758,9 +1761,9 @@ select:focus { border-color: var(--teal); }
 
       <div class="summary-grid">
         <div class="summary-card">
-          <div class="label">FIRE時の必要資産</div>
+          <div class="label">FIRE時の予測資産</div>
           <div class="value" id="targetAssets">--</div>
-          <div class="sub">税・社保・教育・住宅込</div>
+          <div class="sub" id="targetAssetsSub">現在の積立ペース継続時</div>
         </div>
         <div class="summary-card">
           <div class="label">FIRE後 年間支出</div>
@@ -3944,10 +3947,22 @@ function displayResults(baseResult, stressResults, safeAssets, safeYears, params
 
   document.getElementById('recommendBox').style.display = 'block';
   const targetFR = +inputs.targetFailRate.value;
-  document.querySelector('#recommendBox h3').textContent = `破綻確率${targetFR}%以下にするための推奨資産`;
+  document.getElementById('recommendBoxTitle').textContent = `破綻確率${targetFR}%以下の安全資産ライン`;
   document.getElementById('safeAssets').textContent  = `${(safeAssets/10000).toFixed(0)}万`;
-  document.getElementById('safetyMargin').textContent= `×${(safeAssets/requiredAvg).toFixed(2)}`;
-  document.getElementById('safeAge').textContent     = safeYears >= 0 ? `${params.startAgeOriginal+safeYears}歳` : '困難';
+  const ratio = safeAssets / requiredAvg;
+  document.getElementById('safetyMargin').textContent= `×${ratio.toFixed(2)}`;
+  document.getElementById('safeAge').textContent     = safeYears >= 0 ? `${params.startAgeOriginal+safeYears}歳` : '現計画では困難';
+  /** 不足/超過のわかりやすいコメント */
+  const gapEl = document.getElementById('safetyGapNote');
+  if (gapEl) {
+    if (ratio <= 1.0) {
+      gapEl.textContent = `✅ 十分です（安全ライン以上を確保）`;
+      gapEl.style.color = 'var(--green)';
+    } else {
+      const shortage = ((safeAssets - requiredAvg) / 10000).toFixed(0);
+      gapEl.innerHTML = `<span style="color:var(--rose)">⚠ 約${shortage}万円 不足</span>。FIRE年齢を遅らせるか積立を増やすことで解消できます`;
+    }
+  }
 
   const grid = document.getElementById('stressGrid');
   grid.innerHTML = '';
