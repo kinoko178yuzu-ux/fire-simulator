@@ -1561,11 +1561,24 @@ select:focus { border-color: var(--teal); }
             <div class="input-group"><input type="number" id="lifeExpectancy" value="90" min="60" max="110"><span class="unit">歳</span></div></div>
 
           <div class="subsection">
-            <div class="subsection-title">— これまでの厚生年金加入歴</div>
-            <div class="field"><div class="field-row"><span class="field-label">加入年数(現時点)</span></div>
-              <div class="input-group"><input type="number" id="kouseiYears" value="17" min="0" max="40"><span class="unit">年</span></div></div>
+            <div class="subsection-title">— 厚生年金加入歴</div>
+            <div class="field">
+              <div class="field-row"><span class="field-label">就職年齢</span></div>
+              <div class="input-group"><input type="number" id="kouseiStartAge" value="22" min="18" max="35"><span class="unit">歳から</span></div>
+              <div class="help">大卒=22歳、院卒=24歳など</div>
+            </div>
+            <div class="field">
+              <div class="field-row">
+                <span class="field-label">FIREまでの加入年数</span>
+                <span class="field-value" id="kouseiYearsDisplay" style="color:var(--teal-deep);font-weight:700;">—年</span>
+              </div>
+              <div style="font-size:11px;color:var(--ink-mute);margin-top:2px;">就職年齢〜メインシナリオのFIRE年齢で自動計算</div>
+              <input type="hidden" id="kouseiYears" value="17">
+            </div>
             <div class="field"><div class="field-row"><span class="field-label">平均標準報酬月額</span></div>
-              <div class="input-group"><input type="number" id="kouseiAvgMonthly" value="35" min="0" step="1"><span class="unit">万円</span></div></div>
+              <div class="input-group"><input type="number" id="kouseiAvgMonthly" value="35" min="0" step="1"><span class="unit">万円</span></div>
+              <div class="help">在職中の平均月収の目安（額面の約80%）</div>
+            </div>
           </div>
 
           <div class="subsection">
@@ -2008,7 +2021,7 @@ const INPUT_IDS = [
   'kokuhoMedicalRate','kokuhoSupportRate','kokuhoKaigoRate','kokuhoEqual','kokuhoKaigoEqual','kokuhoFlat',
   'kaigoInsMonthly','koukiRate','koukiFlat',
   'pensionMonthly','nenkinExempt','spouseDeduction',
-  'lifeExpectancy','kouseiYears','kouseiAvgMonthly',
+  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly',
   'pensionStartAge','taishokin','idecoCurrent','idecoMonthly',
   'targetFailRate','trials','bucket1Years','bucket2Years','bucket2Rate',
   'emergencyFund','cashYearsTarget','cashReturn'
@@ -3013,6 +3026,31 @@ function calculate() {
     const noDecimal = ['nisaRatio','sideExpenseRatio','volatility','pensionStartAge'];
     sliderDisplays[key].textContent = parseFloat(inputs[key].value).toFixed(noDecimal.includes(key) ? 0 : 1);
   }
+
+  // ★ 厚生年金加入年数を自動計算（就職年齢 〜 メインシナリオFIRE年齢）
+  (function updateKouseiYears() {
+    const startAge    = +inputs.currentAge.value;
+    const startWork   = +inputs.kouseiStartAge.value || 22;
+    const fireMode    = inputs.fireMode?.value || 'scenario';
+    const mainSc      = inputs.fireMainScenario?.value || '2';
+    let   fireAge;
+    if (fireMode === 'target') {
+      fireAge = +inputs.fireTargetAge.value;
+    } else {
+      const ageMap = { '1': +inputs.fireAge1.value, '2': +inputs.fireAge2.value, '3': +inputs.fireAge3.value };
+      fireAge = ageMap[mainSc] || +inputs.fireAge2.value;
+    }
+    // 現時点までの加入済み年数＋今後FIRE年齢までの年数
+    const alreadyWorked = Math.max(startAge - startWork, 0);
+    const untilFire     = Math.max(fireAge - startAge, 0);
+    const total         = alreadyWorked + untilFire;
+    const capped        = Math.min(total, 40); // 上限40年
+    inputs.kouseiYears.value = capped;
+    const dispEl = document.getElementById('kouseiYearsDisplay');
+    if (dispEl) {
+      dispEl.textContent = `${capped}年（${startWork}歳〜${fireAge}歳）`;
+    }
+  })();
 
   // バケツタブの目標現金表示を更新
   (function updateBucketTargetDisp() {
