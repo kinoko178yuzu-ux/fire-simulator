@@ -441,6 +441,12 @@ header {
 /* ★NEW ライフプラン年表 */
 #lifePlanTimeline table td { padding: 5px 8px; border-bottom: 1px solid var(--border-soft); }
 #lifePlanTimeline table tbody tr:hover { background: var(--teal-bg) !important; }
+/* ★NEW 生活費カテゴリ別入力 */
+.ex-cat-row { display: grid; grid-template-columns: 1fr 76px auto; gap: 8px; align-items: center; }
+.ex-cat-label { font-size: 12px; color: var(--ink-soft); }
+.ex-cat-row input { padding: 6px 8px; font-size: 12.5px; border: 1px solid var(--border); background: var(--bg-subtle); text-align: right; width: 100%; }
+.ex-cat-unit { font-size: 10.5px; color: var(--ink-mute); }
+.exmode-opt.active { background: var(--teal) !important; color: #fff; }
 .field-row {
   display: flex;
   justify-content: space-between;
@@ -1334,14 +1340,46 @@ select:focus { border-color: var(--teal); }
           <p class="desc">住宅費を除く月額生活費・インフレ率。副業収入は 01 基本タブで設定。</p>
           <div class="subsection">
             <div class="subsection-title">— 生活費(住宅費を除く)</div>
-            <div class="field">
-              <div class="field-row"><span class="field-label">月額(食費・光熱・通信ほか)</span></div>
-              <div class="input-group"><input type="number" id="monthlyLifeExHouse" value="19" min="0" step="0.5"><span class="unit">万/月</span></div>
+            <!-- ★NEW 入力モード切替 -->
+            <div class="toggle-group" style="margin-bottom:12px;">
+              <button type="button" class="exmode-opt active" data-exmode="simple" style="flex:1;padding:9px 10px;font-size:11.5px;background:none;border:none;cursor:pointer;font-family:inherit;font-weight:600;">合計で入力</button>
+              <button type="button" class="exmode-opt" data-exmode="detail" style="flex:1;padding:9px 10px;font-size:11.5px;background:none;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;font-weight:600;">カテゴリ別で入力</button>
             </div>
-            <div class="field">
+            <input type="hidden" id="expenseInputMode" value="simple">
+            <!-- 合計入力 -->
+            <div id="expenseSimple">
+              <div class="field">
+                <div class="field-row"><span class="field-label">月額(食費・光熱・通信ほか)</span></div>
+                <div class="input-group"><input type="number" id="monthlyLifeExHouse" value="19" min="0" step="0.5"><span class="unit">万/月</span></div>
+              </div>
+            </div>
+            <!-- カテゴリ別入力 -->
+            <div id="expenseDetail" style="display:none;">
+              <p class="desc" style="font-size:11px;margin-bottom:10px;">費目ごとに月額（万円）を入力すると、合計が自動で生活費になります。マネーフォワードの平均値を写すと正確です。</p>
+              <div id="expenseCatList" style="display:flex;flex-direction:column;gap:6px;">
+                <div class="ex-cat-row"><span class="ex-cat-label">🍚 食費</span><input type="number" id="exFood" value="6" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+                <div class="ex-cat-row"><span class="ex-cat-label">💡 水道光熱費</span><input type="number" id="exUtil" value="2.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+                <div class="ex-cat-row"><span class="ex-cat-label">📱 通信費</span><input type="number" id="exComm" value="1.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+                <div class="ex-cat-row"><span class="ex-cat-label">🧴 日用品</span><input type="number" id="exDaily" value="1.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+                <div class="ex-cat-row"><span class="ex-cat-label">👕 衣服・美容</span><input type="number" id="exCloth" value="1" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+                <div class="ex-cat-row"><span class="ex-cat-label">🏥 健康・医療</span><input type="number" id="exMedical" value="1" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+                <div class="ex-cat-row"><span class="ex-cat-label">🚗 交通・自動車</span><input type="number" id="exCar" value="2" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+                <div class="ex-cat-row"><span class="ex-cat-label">🎮 趣味・娯楽</span><input type="number" id="exHobby" value="1.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+                <div class="ex-cat-row"><span class="ex-cat-label">📺 サブスク</span><input type="number" id="exSubsc" value="0.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+                <div class="ex-cat-row"><span class="ex-cat-label">🛡️ 保険(生命・医療)</span><input type="number" id="exInsurance" value="1" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+                <div class="ex-cat-row"><span class="ex-cat-label">📌 その他</span><input type="number" id="exOther" value="0.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
+              </div>
+              <div class="field" style="margin-top:10px;margin-bottom:0;">
+                <div class="input-group" style="background:var(--teal-bg);padding:10px 12px;justify-content:space-between;">
+                  <span style="font-size:12px;font-weight:600;color:var(--teal-deep);">生活費 合計</span>
+                  <span class="mono" style="font-size:15px;font-weight:700;color:var(--teal-deep);"><span id="expenseDetailSum">--</span> 万/月</span>
+                </div>
+              </div>
+            </div>
+            <div class="field" style="margin-top:12px;">
               <div class="field-row"><span class="field-label">特別費(年単位の不定期支出)</span></div>
               <div class="input-group"><input type="number" id="annualSpecial" value="50" min="0" step="5"><span class="unit">万/年</span></div>
-              <div class="help">車検・固定資産税・旅行・冠婚葬祭・家電買い替え</div>
+              <div class="help">車検・固定資産税・冠婚葬祭・家電買い替えなど（旅行・大型支出はライフイベントへ）</div>
             </div>
           </div>
           <div class="subsection">
@@ -2026,6 +2064,42 @@ document.getElementById('payoffTiming').addEventListener('change', (e) => {
   calculate();
 });
 
+/** ★NEW 生活費 入力モード切替（合計 / カテゴリ別） */
+const EXPENSE_CAT_IDS = ['exFood','exUtil','exComm','exDaily','exCloth','exMedical','exCar','exHobby','exSubsc','exInsurance','exOther'];
+function expenseCatSum() {
+  return EXPENSE_CAT_IDS.reduce((s, id) => {
+    const el = document.getElementById(id);
+    return s + (el ? (+el.value || 0) : 0);
+  }, 0);
+}
+function applyExpenseMode() {
+  const modeEl = document.getElementById('expenseInputMode');
+  const mode = (modeEl && modeEl.value) === 'detail' ? 'detail' : 'simple';
+  const simpleEl = document.getElementById('expenseSimple');
+  const detailEl = document.getElementById('expenseDetail');
+  if (simpleEl) simpleEl.style.display = mode === 'detail' ? 'none' : 'block';
+  if (detailEl) detailEl.style.display = mode === 'detail' ? 'block' : 'none';
+  document.querySelectorAll('.exmode-opt').forEach(b => {
+    b.classList.toggle('active', b.dataset.exmode === mode);
+  });
+  if (mode === 'detail') {
+    const sum = expenseCatSum();
+    const sumEl = document.getElementById('expenseDetailSum');
+    if (sumEl) sumEl.textContent = sum.toFixed(1);
+    // 合計を生活費フィールドへ反映（他の計算がこの値を参照するため）
+    const mEl = document.getElementById('monthlyLifeExHouse');
+    if (mEl) mEl.value = sum;
+  }
+}
+document.querySelectorAll('.exmode-opt').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.getElementById('expenseInputMode').value = btn.dataset.exmode;
+    applyExpenseMode();
+    calculate();
+    if (typeof debouncedSave === 'function') debouncedSave();
+  });
+});
+
 const INPUT_IDS = [
   'currentAge','spouseAge','child1Age','child2Age',
   'child1IndependAge','child2IndependAge','child1Reduce','child2Reduce',
@@ -2035,6 +2109,8 @@ const INPUT_IDS = [
   'monthlyInvest','bonusInvest','returnAcc','returnRet','volatility','nisaRatio',
   'divGrowth','divYield','divNisaRatio',
   'monthlyLifeExHouse','annualSpecial','sideIncomeGross','sideExpenseRatio','sideIncomeEndAge','inflation',
+  'expenseInputMode',
+  'exFood','exUtil','exComm','exDaily','exCloth','exMedical','exCar','exHobby','exSubsc','exInsurance','exOther',
   'loanBalance','loanRate','loanYears','loanMonthly','loanBonus',
   'taxCreditYears','taxCreditAmount','loanPayoff','payoffTiming','payoffCustomYear',
   'child1Path','child2Path',
@@ -2236,6 +2312,7 @@ function loadData() {
     }
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
     if (typeof renderSpotEvents === 'function') renderSpotEvents();
+    if (typeof applyExpenseMode === 'function') applyExpenseMode();
     calculate(); showToast('読み込みました');
   } catch(e) { showToast('読込に失敗'); }
 }
@@ -2327,7 +2404,8 @@ function applyAllData(data) {
       document.querySelector(`[data-loan-payoff="${data._loanPayoffToggle}"]`)?.classList.add('active');
     }
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
-    if (typeof renderSpotEvents === 'function') renderSpotEvents();  // 計画購入リストを再描画
+    if (typeof renderSpotEvents === 'function') renderSpotEvents();  // ライフイベントリストを再描画
+    if (typeof applyExpenseMode === 'function') applyExpenseMode();
     calculate();
   } finally {
     isApplyingCloud = false;
@@ -3288,6 +3366,14 @@ function calculate() {
   for (const key in sliderDisplays) {
     const noDecimal = ['nisaRatio','sideExpenseRatio','volatility','pensionStartAge'];
     sliderDisplays[key].textContent = parseFloat(inputs[key].value).toFixed(noDecimal.includes(key) ? 0 : 1);
+  }
+
+  // ★NEW 生活費がカテゴリ別モードなら合計を月額生活費へ反映（他計算より先）
+  if (inputs.expenseInputMode && inputs.expenseInputMode.value === 'detail') {
+    const sum = expenseCatSum();
+    if (inputs.monthlyLifeExHouse) inputs.monthlyLifeExHouse.value = sum;
+    const sumEl = document.getElementById('expenseDetailSum');
+    if (sumEl) sumEl.textContent = sum.toFixed(1);
   }
 
   // ★ 厚生年金加入年数を自動計算（就職年齢 〜 メインシナリオFIRE年齢）
