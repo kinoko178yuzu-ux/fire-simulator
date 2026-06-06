@@ -464,12 +464,22 @@ header {
 body.mode-plan .mode-sim { display:none !important; }
 body.mode-sim .mode-plan { display:none !important; }
 @media (max-width:600px){ .app-mode-bar { padding:0 10px; gap:6px; } .app-mode-btn { font-size:13px; padding:11px 6px; } .app-mode-btn .sub { font-size:9.5px; } }
-/* ★NEW 生活費カテゴリ別入力 */
-.ex-cat-row { display: grid; grid-template-columns: 1fr 76px auto; gap: 8px; align-items: center; }
-.ex-cat-label { font-size: 12px; color: var(--ink-soft); }
-.ex-cat-row input { padding: 6px 8px; font-size: 12.5px; border: 1px solid var(--border); background: var(--bg-subtle); text-align: right; width: 100%; }
-.ex-cat-unit { font-size: 10.5px; color: var(--ink-mute); }
-.exmode-opt.active { background: var(--teal) !important; color: #fff; }
+/* ★NEW 年間収支シート（12ヶ月グリッド） */
+.bg-table { border-collapse: collapse; font-size: 11px; min-width: 920px; }
+.bg-table th, .bg-table td { border: 1px solid var(--border-soft); padding: 2px 3px; text-align: center; white-space: nowrap; }
+.bg-table thead th { background: var(--ink); color: #fff; position: sticky; top: 0; z-index: 1; font-weight: 600; }
+.bg-table thead th div { font-size: 10px; }
+.bg-rowlabel { text-align: left !important; font-weight: 600; color: var(--ink-soft); background: var(--bg-subtle); position: sticky; left: 0; z-index: 1; min-width: 116px; }
+.bg-cell { width: 52px; padding: 4px 3px; font-size: 11px; border: 1px solid var(--border); background: #fff; text-align: right; font-family: 'JetBrains Mono', monospace; }
+.bg-cell:focus { outline: 2px solid var(--teal); background: var(--teal-bg); }
+.bg-avg { font-weight: 700; color: var(--teal-deep); background: var(--teal-bg); font-family: 'JetBrains Mono', monospace; }
+.bg-mtotal { font-family: 'JetBrains Mono', monospace; color: var(--ink-soft); }
+.bg-group td { background: var(--bg-subtle); text-align: left !important; font-weight: 700; color: var(--teal-deep); font-size: 10.5px; padding: 4px 8px; }
+.bg-group2 td { color: var(--ink-mute); }
+.bg-subtotal td { font-weight: 700; background: #f3eee4; }
+.bg-balance td { font-weight: 700; background: #eef5f0; }
+.bg-imp { background: none; border: none; cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
+.bg-imp:hover { transform: scale(1.2); }
 .field-row {
   display: flex;
   justify-content: space-between;
@@ -1369,49 +1379,11 @@ select:focus { border-color: var(--teal); }
           <p class="desc">住宅費を除く月額生活費・インフレ率。副業収入は 01 基本タブで設定。</p>
           <div class="subsection">
             <div class="subsection-title">— 生活費(住宅費を除く)</div>
-            <!-- ★NEW 入力モード切替 -->
-            <div class="toggle-group" style="margin-bottom:12px;">
-              <button type="button" class="exmode-opt active" data-exmode="simple" style="flex:1;padding:9px 10px;font-size:11.5px;background:none;border:none;cursor:pointer;font-family:inherit;font-weight:600;">合計で入力</button>
-              <button type="button" class="exmode-opt" data-exmode="detail" style="flex:1;padding:9px 10px;font-size:11.5px;background:none;border:none;border-left:1px solid var(--border);cursor:pointer;font-family:inherit;font-weight:600;">カテゴリ別で入力</button>
-            </div>
-            <input type="hidden" id="expenseInputMode" value="simple">
-            <!-- 合計入力 -->
-            <div id="expenseSimple">
-              <div class="field">
-                <div class="field-row"><span class="field-label">月額(食費・光熱・通信ほか)</span></div>
-                <div class="input-group"><input type="number" id="monthlyLifeExHouse" value="19" min="0" step="0.5"><span class="unit">万/月</span></div>
-              </div>
-            </div>
-            <!-- カテゴリ別入力 -->
-            <div id="expenseDetail" style="display:none;">
-              <p class="desc" style="font-size:11px;margin-bottom:10px;">費目ごとに月額（万円）を入力すると、合計が自動で生活費になります。マネーフォワードの平均値を写すと正確です。</p>
-              <!-- ★NEW マネーフォワードCSV取込 -->
-              <div style="background:var(--teal-bg);border:1px solid var(--teal);border-radius:6px;padding:10px;margin-bottom:12px;">
-                <div style="font-size:11.5px;font-weight:700;color:var(--teal-deep);margin-bottom:4px;">📥 マネーフォワードCSVから自動入力</div>
-                <p class="desc" style="font-size:10.5px;margin-bottom:8px;">MFの「収入・支出詳細」でCSVをダウンロードし、このボタンで読み込むと費目別に自動集計します。住宅(ローン)・税社保・教育・振替は二重計上防止のため除外します。</p>
-                <button type="button" id="mfCsvBtn" style="width:100%;padding:8px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">CSVファイルを選択して読み込む</button>
-                <input type="file" id="mfCsvInput" accept=".csv,text/csv" style="display:none;">
-                <div id="mfCsvResult" style="margin-top:8px;"></div>
-              </div>
-              <div id="expenseCatList" style="display:flex;flex-direction:column;gap:6px;">
-                <div class="ex-cat-row"><span class="ex-cat-label">🍚 食費</span><input type="number" id="exFood" value="6" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-                <div class="ex-cat-row"><span class="ex-cat-label">💡 水道光熱費</span><input type="number" id="exUtil" value="2.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-                <div class="ex-cat-row"><span class="ex-cat-label">📱 通信費</span><input type="number" id="exComm" value="1.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-                <div class="ex-cat-row"><span class="ex-cat-label">🧴 日用品</span><input type="number" id="exDaily" value="1.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-                <div class="ex-cat-row"><span class="ex-cat-label">👕 衣服・美容</span><input type="number" id="exCloth" value="1" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-                <div class="ex-cat-row"><span class="ex-cat-label">🏥 健康・医療</span><input type="number" id="exMedical" value="1" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-                <div class="ex-cat-row"><span class="ex-cat-label">🚗 交通・自動車</span><input type="number" id="exCar" value="2" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-                <div class="ex-cat-row"><span class="ex-cat-label">🎮 趣味・娯楽</span><input type="number" id="exHobby" value="1.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-                <div class="ex-cat-row"><span class="ex-cat-label">📺 サブスク</span><input type="number" id="exSubsc" value="0.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-                <div class="ex-cat-row"><span class="ex-cat-label">🛡️ 保険(生命・医療)</span><input type="number" id="exInsurance" value="1" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-                <div class="ex-cat-row"><span class="ex-cat-label">📌 その他</span><input type="number" id="exOther" value="0.5" min="0" step="0.1"><span class="ex-cat-unit">万/月</span></div>
-              </div>
-              <div class="field" style="margin-top:10px;margin-bottom:0;">
-                <div class="input-group" style="background:var(--teal-bg);padding:10px 12px;justify-content:space-between;">
-                  <span style="font-size:12px;font-weight:600;color:var(--teal-deep);">生活費 合計</span>
-                  <span class="mono" style="font-size:15px;font-weight:700;color:var(--teal-deep);"><span id="expenseDetailSum">--</span> 万/月</span>
-                </div>
-              </div>
+            <div class="field">
+              <div class="field-row"><span class="field-label">FIRE後の生活費（月額）</span></div>
+              <div class="input-group"><input type="number" id="monthlyLifeExHouse" value="19" min="0" step="0.5"><span class="unit">万/月</span></div>
+              <div class="help" id="budgetLinkHelp">右の「📊 年間収支シート」に12ヶ月分（収入・支出）を入力すると、生活費の月平均がここに自動反映されます（MFのCSVは各月スロットに取込可）。</div>
+              <input type="hidden" id="budgetSheetJson" value="">
             </div>
             <div class="field" style="margin-top:12px;">
               <div class="field-row"><span class="field-label">特別費(年単位の不定期支出)</span></div>
@@ -1823,6 +1795,16 @@ select:focus { border-color: var(--teal); }
         </div>
       </div>
 
+      <!-- ★NEW 年間収支シート（12ヶ月） -->
+      <div class="card mode-plan" id="budgetCard">
+        <h3><span class="dot"></span>📊 年間収支シート（12ヶ月の収入・支出）</h3>
+        <div style="font-size:11.5px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
+          スプレッドシートの実績管理と同じく、各月の収入・支出を入力すると<strong>年間収支（黒字・赤字）</strong>を自動計算します。<br>
+          <span style="font-size:10.5px;color:var(--ink-mute);">月見出しの 📥 でその月のマネーフォワードCSVを取り込めます。<strong>生活費系支出の月平均</strong>が「FIRE後の生活費」に自動反映されます（住宅ローン・教育・税社保はFIRE診断が別計算するため除外）。</span>
+        </div>
+        <div id="budgetSheet"></div>
+      </div>
+
       <div class="fail-rate-banner mode-sim" id="failRateBanner">
         <div class="label">現在の計画 / 破綻確率</div>
         <div class="num"><span id="failRateNum">--</span>%</div>
@@ -2099,69 +2081,43 @@ document.getElementById('payoffTiming').addEventListener('change', (e) => {
   calculate();
 });
 
-/** ★NEW 生活費 入力モード切替（合計 / カテゴリ別） */
-const EXPENSE_CAT_IDS = ['exFood','exUtil','exComm','exDaily','exCloth','exMedical','exCar','exHobby','exSubsc','exInsurance','exOther'];
-function expenseCatSum() {
-  return EXPENSE_CAT_IDS.reduce((s, id) => {
-    const el = document.getElementById(id);
-    return s + (el ? (+el.value || 0) : 0);
-  }, 0);
-}
-function applyExpenseMode() {
-  const modeEl = document.getElementById('expenseInputMode');
-  const mode = (modeEl && modeEl.value) === 'detail' ? 'detail' : 'simple';
-  const simpleEl = document.getElementById('expenseSimple');
-  const detailEl = document.getElementById('expenseDetail');
-  if (simpleEl) simpleEl.style.display = mode === 'detail' ? 'none' : 'block';
-  if (detailEl) detailEl.style.display = mode === 'detail' ? 'block' : 'none';
-  document.querySelectorAll('.exmode-opt').forEach(b => {
-    b.classList.toggle('active', b.dataset.exmode === mode);
-  });
-  if (mode === 'detail') {
-    const sum = Math.round(expenseCatSum() * 10) / 10;
-    const sumEl = document.getElementById('expenseDetailSum');
-    if (sumEl) sumEl.textContent = sum.toFixed(1);
-    // 合計を生活費フィールドへ反映（他の計算がこの値を参照するため）
-    const mEl = document.getElementById('monthlyLifeExHouse');
-    if (mEl) mEl.value = sum;
-  }
-}
-document.querySelectorAll('.exmode-opt').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.getElementById('expenseInputMode').value = btn.dataset.exmode;
-    applyExpenseMode();
-    calculate();
-    if (typeof debouncedSave === 'function') debouncedSave();
-  });
-});
-
 /** ====================================
- *  ★NEW マネーフォワードCSV 取込
+ *  ★NEW 年間収支シート（12ヶ月・収入＋支出）
  *  ==================================== */
-/** MF大項目 → アプリ費目ID。'_'始まりは除外（二重計上防止/別管理） */
-const MF_CAT_MAP = {
-  '食費':'exFood', '水道・光熱費':'exUtil', '水道光熱費':'exUtil', '通信費':'exComm',
-  '日用品':'exDaily', '衣服・美容':'exCloth', '健康・医療':'exMedical',
-  '自動車':'exCar', '交通費':'exCar', '趣味・娯楽':'exHobby',
-  'その他':'exOther', '特別な支出':'exOther', '教養・教育':'_edu',
-  '住宅':'_house', '税・社会保障':'_tax', '税・社会保険':'_tax',
-  '現金・カード':'_skip', '未分類':'_skip', '振替':'_skip', '収入':'_income',
-};
-const MF_CAT_LABEL = {
-  exFood:'🍚 食費', exUtil:'💡 水道光熱費', exComm:'📱 通信費', exDaily:'🧴 日用品',
-  exCloth:'👕 衣服・美容', exMedical:'🏥 健康・医療', exCar:'🚗 交通・自動車',
-  exHobby:'🎮 趣味・娯楽', exSubsc:'📺 サブスク', exInsurance:'🛡️ 保険', exOther:'📌 その他',
+const BUDGET_INCOME_ROWS = [
+  { key:'salary',   label:'💼 給与(手取り)' },
+  { key:'bonus',    label:'🎁 賞与' },
+  { key:'side',     label:'🧑‍💻 副業' },
+  { key:'dividend', label:'📈 配当' },
+  { key:'spotInc',  label:'✨ 臨時収入' },
+];
+/** 生活費系（FIRE後生活費の月平均として反映） */
+const BUDGET_LIVING_ROWS = [
+  { key:'food',label:'🍚 食費' },{ key:'util',label:'💡 水道光熱費' },{ key:'comm',label:'📱 通信費' },
+  { key:'daily',label:'🧴 日用品' },{ key:'cloth',label:'👕 衣服・美容' },{ key:'medical',label:'🏥 健康・医療' },
+  { key:'car',label:'🚗 交通・自動車' },{ key:'hobby',label:'🎮 趣味・娯楽' },{ key:'subsc',label:'📺 サブスク' },
+  { key:'insurance',label:'🛡️ 保険' },{ key:'other',label:'📌 その他' },
+];
+/** 別管理（シミュレーションが別途計算するため生活費平均には含めない＝二重計上防止） */
+const BUDGET_OTHER_ROWS = [
+  { key:'loan',label:'🏠 住宅ローン' },{ key:'edu',label:'🎓 教育' },{ key:'tax',label:'🏛️ 税・社保' },
+];
+const BUDGET_ALL_EXP = [...BUDGET_LIVING_ROWS, ...BUDGET_OTHER_ROWS];
+
+/** MF大項目→収支シート行key（'_skip'は除外）。中項目で収入を細分。 */
+const MF_BIG_MAP = {
+  '食費':'food','水道・光熱費':'util','水道光熱費':'util','通信費':'comm','日用品':'daily',
+  '衣服・美容':'cloth','健康・医療':'medical','自動車':'car','交通費':'car','趣味・娯楽':'hobby',
+  'その他':'other','特別な支出':'other','教養・教育':'edu','住宅':'loan',
+  '税・社会保障':'tax','税・社会保険':'tax','現金・カード':'_skip','未分類':'_skip','振替':'_skip',
 };
 
-/** RFC4180準拠の簡易CSVパーサー（クオート内カンマ・改行対応） */
 function parseCSV(text) {
   const rows = []; let row = [], field = '', inQ = false;
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
-    if (inQ) {
-      if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else inQ = false; }
-      else field += c;
-    } else {
+    if (inQ) { if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else inQ = false; } else field += c; }
+    else {
       if (c === '"') inQ = true;
       else if (c === ',') { row.push(field); field = ''; }
       else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
@@ -2173,95 +2129,193 @@ function parseCSV(text) {
   return rows;
 }
 
-function importMFCsv(text) {
-  const rows = parseCSV(text);
-  if (!rows.length) return null;
-  let start = 0;
-  if (rows[0] && rows[0].some(c => (c||'').includes('計算対象') || (c||'').includes('大項目'))) start = 1;
-  const sums = {}, excluded = {};
-  let income = 0, count = 0;
-  let minDate = null, maxDate = null;
-  for (let i = start; i < rows.length; i++) {
-    const r = rows[i];
-    if (!r || r.length < 9) continue;
-    const keep = (r[0]||'').trim();
-    const date = (r[1]||'').trim();
-    const amt  = parseInt((r[3]||'').replace(/[^0-9\-]/g,''), 10) || 0;
-    const cat  = (r[5]||'').trim();
-    const furikae = (r[8]||'').trim();
-    if (keep !== '1' || furikae !== '0') continue;
-    if (date) { if (!minDate || date < minDate) minDate = date; if (!maxDate || date > maxDate) maxDate = date; }
-    if (amt > 0) { income += amt; continue; }
-    const v = -amt; count++;
-    const map = MF_CAT_MAP[cat];
-    if (!map || map.charAt(0) === '_') { excluded[cat] = (excluded[cat]||0) + v; continue; }
-    sums[map] = (sums[map]||0) + v;
+/** budgetSheetJson の読み書き。形式: { rowKey: [12個の万円], ... } */
+function getBudget() {
+  try { const o = JSON.parse(document.getElementById('budgetSheetJson').value || '{}'); return (o && typeof o==='object') ? o : {}; }
+  catch { return {}; }
+}
+function setBudget(b) {
+  document.getElementById('budgetSheetJson').value = JSON.stringify(b);
+}
+function budgetRowArr(b, key) { return (b[key] && b[key].length === 12) ? b[key] : new Array(12).fill(0); }
+function budgetHasData() {
+  const b = getBudget();
+  return [...BUDGET_INCOME_ROWS, ...BUDGET_ALL_EXP].some(r => budgetRowArr(b, r.key).some(v => +v > 0));
+}
+/** データのある月数（支出列が1つでも非ゼロの月をカウント） */
+function budgetActiveMonths(b) {
+  let n = 0;
+  for (let m = 0; m < 12; m++) {
+    const any = BUDGET_ALL_EXP.some(r => +budgetRowArr(b, r.key)[m] > 0)
+             || BUDGET_INCOME_ROWS.some(r => +budgetRowArr(b, r.key)[m] > 0);
+    if (any) n++;
   }
-  // 費目フィールドへ反映（円→万、小数1桁）
-  EXPENSE_CAT_IDS.forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = ((sums[id]||0) / 10000).toFixed(1);
+  return n;
+}
+function budgetRowTotal(b, key) { return budgetRowArr(b, key).reduce((s, v) => s + (+v || 0), 0); }
+
+/** 生活費系の月平均（万円）→ FIRE後生活費へ反映する値 */
+function budgetLivingMonthlyAvg(b) {
+  const months = Math.max(budgetActiveMonths(b), 1);
+  const livingTotal = BUDGET_LIVING_ROWS.reduce((s, r) => s + budgetRowTotal(b, r.key), 0);
+  return livingTotal / months;
+}
+
+/** 収支シートを描画（プランモード右） */
+function renderBudgetSheet() {
+  const host = document.getElementById('budgetSheet');
+  if (!host) return;
+  const b = getBudget();
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  const cell = (key, m, v) => `<input type="number" class="bg-cell" data-k="${key}" data-m="${m}" value="${v||''}" min="0" step="0.1" inputmode="decimal">`;
+  const rowHtml = (r, group) => {
+    const arr = budgetRowArr(b, r.key);
+    const tds = arr.map((v,m)=>`<td>${cell(r.key,m,v)}</td>`).join('');
+    return `<tr data-group="${group}"><td class="bg-rowlabel">${r.label}</td>${tds}<td class="bg-avg" data-avgk="${r.key}">–</td></tr>`;
+  };
+  const importBtns = months.map((mn,m)=>`<th><div>${mn}</div><button type="button" class="bg-imp" data-m="${m}" title="${mn}にMF CSVを取込">📥</button></th>`).join('');
+  host.innerHTML = `
+  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:6px;">
+    <table class="bg-table">
+      <thead><tr><th class="bg-rowlabel">費目＼月</th>${importBtns}<th>月平均</th></tr></thead>
+      <tbody>
+        <tr class="bg-group"><td colspan="14">収入</td></tr>
+        ${BUDGET_INCOME_ROWS.map(r=>rowHtml(r,'income')).join('')}
+        <tr class="bg-subtotal"><td class="bg-rowlabel">収入 合計</td>${months.map((_,m)=>`<td class="bg-mtotal" data-inc="${m}">–</td>`).join('')}<td class="bg-avg" data-inctotal>–</td></tr>
+        <tr class="bg-group"><td colspan="14">支出（生活費系＝FIRE生活費に反映）</td></tr>
+        ${BUDGET_LIVING_ROWS.map(r=>rowHtml(r,'living')).join('')}
+        <tr class="bg-group bg-group2"><td colspan="14">支出（別管理：住宅ローン・教育・税社保はシミュレーションが別計算）</td></tr>
+        ${BUDGET_OTHER_ROWS.map(r=>rowHtml(r,'other')).join('')}
+        <tr class="bg-subtotal"><td class="bg-rowlabel">支出 合計</td>${months.map((_,m)=>`<td class="bg-mtotal" data-exp="${m}">–</td>`).join('')}<td class="bg-avg" data-exptotal>–</td></tr>
+        <tr class="bg-balance"><td class="bg-rowlabel">収支（収入−支出）</td>${months.map((_,m)=>`<td class="bg-mtotal" data-bal="${m}">–</td>`).join('')}<td class="bg-avg" data-baltotal>–</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <input type="file" id="bgCsvInput" accept=".csv,text/csv" style="display:none;">
+  <div id="bgSummary" style="margin-top:10px;font-size:12px;"></div>`;
+
+  // 入力リスナー（input=即時に合計＆生活費反映、change=フル再計算）
+  host.querySelectorAll('.bg-cell').forEach(inp => {
+    inp.addEventListener('input', () => { writeBudgetFromInputs(); updateBudgetTotals(); });
+    inp.addEventListener('change', () => { writeBudgetFromInputs(); updateBudgetTotals(); calculate(); if (typeof debouncedSave==='function') debouncedSave(); });
   });
-  document.getElementById('expenseInputMode').value = 'detail';
-  applyExpenseMode();
+  // 月別MF取込
+  let bgImportMonth = null;
+  host.querySelectorAll('.bg-imp').forEach(btn => {
+    btn.addEventListener('click', () => { bgImportMonth = +btn.dataset.m; document.getElementById('bgCsvInput').click(); });
+  });
+  host.querySelector('#bgCsvInput').addEventListener('change', (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file == null || bgImportMonth == null) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const buf = reader.result;
+        let text;
+        try { text = new TextDecoder('shift-jis').decode(new Uint8Array(buf)); } catch { text = ''; }
+        if (text.indexOf('計算対象') === -1 && text.indexOf('大項目') === -1) {
+          try { text = new TextDecoder('utf-8').decode(new Uint8Array(buf)); } catch {}
+        }
+        importMFCsvToMonth(text, bgImportMonth);
+      } catch (err) {}
+      e.target.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+  });
+  updateBudgetTotals();
+}
+
+/** 画面の入力値を budgetSheetJson に書き戻す */
+function writeBudgetFromInputs() {
+  const b = {};
+  document.querySelectorAll('#budgetSheet .bg-cell').forEach(inp => {
+    const k = inp.dataset.k, m = +inp.dataset.m;
+    if (!b[k]) b[k] = new Array(12).fill(0);
+    b[k][m] = +inp.value || 0;
+  });
+  setBudget(b);
+}
+
+/** 合計・平均・収支を更新し、生活費の月平均を monthlyLifeExHouse へ反映 */
+function updateBudgetTotals() {
+  const host = document.getElementById('budgetSheet');
+  if (!host) return;
+  const b = getBudget();
+  const months = Math.max(budgetActiveMonths(b), 1);
+  // 行ごとの月平均
+  [...BUDGET_INCOME_ROWS, ...BUDGET_ALL_EXP].forEach(r => {
+    const el = host.querySelector(`[data-avgk="${r.key}"]`);
+    if (el) { const avg = budgetRowTotal(b, r.key) / months; el.textContent = avg ? avg.toFixed(1) : '–'; }
+  });
+  // 月別合計
+  for (let m = 0; m < 12; m++) {
+    const inc = BUDGET_INCOME_ROWS.reduce((s,r)=>s+(+budgetRowArr(b,r.key)[m]||0),0);
+    const exp = BUDGET_ALL_EXP.reduce((s,r)=>s+(+budgetRowArr(b,r.key)[m]||0),0);
+    const incEl = host.querySelector(`[data-inc="${m}"]`); if (incEl) incEl.textContent = inc?inc.toFixed(1):'–';
+    const expEl = host.querySelector(`[data-exp="${m}"]`); if (expEl) expEl.textContent = exp?exp.toFixed(1):'–';
+    const balEl = host.querySelector(`[data-bal="${m}"]`);
+    if (balEl) { const bal = inc-exp; balEl.textContent = (inc||exp)?bal.toFixed(1):'–'; balEl.style.color = bal<0?'var(--rose)':'var(--teal-deep)'; }
+  }
+  // 月平均合計
+  const incAvg = BUDGET_INCOME_ROWS.reduce((s,r)=>s+budgetRowTotal(b,r.key),0)/months;
+  const expAvg = BUDGET_ALL_EXP.reduce((s,r)=>s+budgetRowTotal(b,r.key),0)/months;
+  const livingAvg = budgetLivingMonthlyAvg(b);
+  const set = (sel,val,neg)=>{ const el=host.querySelector(sel); if(el){ el.textContent = val?val.toFixed(1):'–'; if(neg!=null) el.style.color = neg?'var(--rose)':'var(--teal-deep)';}};
+  set('[data-inctotal]', incAvg);
+  set('[data-exptotal]', expAvg);
+  set('[data-baltotal]', incAvg-expAvg, (incAvg-expAvg)<0);
+
+  // FIRE後生活費へ反映（データがある場合のみ）
+  const mEl = document.getElementById('monthlyLifeExHouse');
+  const summary = document.getElementById('bgSummary');
+  if (budgetHasData()) {
+    const v = Math.round(livingAvg*10)/10;
+    if (mEl) { mEl.value = v; mEl.readOnly = true; mEl.style.background = 'var(--bg-subtle)'; }
+    if (summary) summary.innerHTML = `<div style="background:var(--teal-bg);border-left:3px solid var(--teal);padding:8px 12px;line-height:1.7;">
+      <strong>${months}ヶ月入力</strong> ／ 月平均：収入 <b>${incAvg.toFixed(1)}万</b>・支出 <b>${expAvg.toFixed(1)}万</b>・<span style="color:${incAvg-expAvg<0?'var(--rose)':'var(--teal-deep)'};">収支 ${(incAvg-expAvg).toFixed(1)}万</span>（年換算 ${((incAvg-expAvg)*12).toFixed(0)}万）<br>
+      → <strong>FIRE後の生活費に ${v}万/月 を反映</strong>（生活費系のみ。住宅ローン・教育・税社保は除外）</div>`;
+  } else {
+    if (mEl) { mEl.readOnly = false; mEl.style.background = ''; }
+    if (summary) summary.innerHTML = `<div style="color:var(--ink-mute);font-size:11px;">まだ未入力です。各月のセルに入力するか、月見出しの 📥 でMFのCSVをその月に取り込めます。空欄のままなら左の「FIRE後の生活費」をそのまま使います。</div>`;
+  }
+}
+
+/** MF CSV を指定月の列へ取込（支出＝大項目別、収入＝中項目別） */
+function importMFCsvToMonth(text, monthIdx) {
+  const rows = parseCSV(text);
+  if (!rows.length) return;
+  let start = (rows[0] && rows[0].some(c => (c||'').includes('計算対象') || (c||'').includes('大項目'))) ? 1 : 0;
+  const agg = {}; // rowKey -> yen
+  for (let i = start; i < rows.length; i++) {
+    const r = rows[i]; if (!r || r.length < 9) continue;
+    const keep=(r[0]||'').trim(), amt=parseInt((r[3]||'').replace(/[^0-9\-]/g,''),10)||0;
+    const big=(r[5]||'').trim(), mid=(r[6]||'').trim(), furikae=(r[8]||'').trim();
+    if (keep!=='1' || furikae!=='0') continue;
+    if (amt > 0) { // 収入: 中項目で振り分け
+      let k='spotInc';
+      if (mid.includes('給与')||mid.includes('給料')) k='salary';
+      else if (mid.includes('賞与')||mid.includes('ボーナス')) k='bonus';
+      else if (mid.includes('配当')) k='dividend';
+      else if (big==='収入'&&(mid.includes('事業')||mid.includes('副'))) k='side';
+      agg[k]=(agg[k]||0)+amt;
+    } else {
+      const k = MF_BIG_MAP[big];
+      if (!k || k==='_skip') continue;
+      agg[k]=(agg[k]||0)+(-amt);
+    }
+  }
+  const b = getBudget();
+  [...BUDGET_INCOME_ROWS, ...BUDGET_ALL_EXP].forEach(r => {
+    if (!b[r.key]) b[r.key] = new Array(12).fill(0);
+    if (agg[r.key] != null) b[r.key][monthIdx] = Math.round(agg[r.key]/10000*10)/10; // 円→万 0.1
+  });
+  setBudget(b);
+  renderBudgetSheet(); // 値を反映して再描画
   calculate();
   if (typeof debouncedSave === 'function') debouncedSave();
-  return { sums, income, excluded, count, minDate, maxDate };
 }
 
-function renderMFResult(res) {
-  const host = document.getElementById('mfCsvResult');
-  if (!host) return;
-  if (!res) { host.innerHTML = '<div style="color:var(--rose);font-size:11px;">読み込みに失敗しました。MFの収入・支出詳細CSVか確認してください。</div>'; return; }
-  const yen2man = v => (v/10000).toFixed(1);
-  const period = (res.minDate && res.maxDate)
-    ? (res.minDate === res.maxDate ? res.minDate : `${res.minDate} 〜 ${res.maxDate}`) : '';
-  let catRows = EXPENSE_CAT_IDS.filter(id => res.sums[id]).map(id =>
-    `<tr><td style="padding:2px 4px;">${MF_CAT_LABEL[id]||id}</td><td style="padding:2px 4px;text-align:right;font-weight:600;">${yen2man(res.sums[id])}万</td></tr>`).join('');
-  const total = Object.values(res.sums).reduce((s,v)=>s+v,0);
-  const excludedList = Object.entries(res.excluded).filter(([,v])=>v).map(([c,v])=>`${c}(${yen2man(v)}万)`).join('、');
-  host.innerHTML = `
-    <div style="background:var(--bg-card);border:1px solid var(--border-soft);border-radius:4px;padding:8px;font-size:11px;">
-      <div style="font-weight:700;color:var(--teal-deep);margin-bottom:4px;">✅ 反映しました ${period?`<span style="font-weight:400;color:var(--ink-mute);">（${period}）</span>`:''}</div>
-      <table style="width:100%;border-collapse:collapse;">${catRows}
-        <tr style="border-top:1px solid var(--border);"><td style="padding:3px 4px;font-weight:700;">生活費 合計</td><td style="padding:3px 4px;text-align:right;font-weight:700;color:var(--teal-deep);">${yen2man(total)}万/月</td></tr>
-      </table>
-      ${excludedList?`<div style="margin-top:6px;color:var(--ink-mute);font-size:10px;line-height:1.5;">除外（別管理）: ${excludedList}</div>`:''}
-      ${res.income?`<div style="margin-top:4px;color:var(--ink-mute);font-size:10px;">参考・収入計: ${yen2man(res.income)}万（アプリの年収欄は01基本で別途設定）</div>`:''}
-    </div>`;
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-  const btn = document.getElementById('mfCsvBtn');
-  const inp = document.getElementById('mfCsvInput');
-  if (btn && inp) {
-    btn.addEventListener('click', () => inp.click());
-    inp.addEventListener('change', (e) => {
-      const file = e.target.files && e.target.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          // MFのCSVはShift-JIS
-          const buf = reader.result;
-          let text;
-          try { text = new TextDecoder('shift-jis').decode(new Uint8Array(buf)); }
-          catch { text = new TextDecoder('utf-8').decode(new Uint8Array(buf)); }
-          // UTF-8で文字化けする場合のフォールバック判定
-          if (text.indexOf('計算対象') === -1 && text.indexOf('大項目') === -1) {
-            try { text = new TextDecoder('utf-8').decode(new Uint8Array(buf)); } catch {}
-          }
-          const res = importMFCsv(text);
-          renderMFResult(res);
-        } catch (err) {
-          renderMFResult(null);
-        }
-        inp.value = '';
-      };
-      reader.readAsArrayBuffer(file);
-    });
-  }
-});
+document.addEventListener('DOMContentLoaded', () => { renderBudgetSheet(); });
 
 const INPUT_IDS = [
   'currentAge','spouseAge','child1Age','child2Age',
@@ -2272,8 +2326,7 @@ const INPUT_IDS = [
   'monthlyInvest','bonusInvest','returnAcc','returnRet','volatility','nisaRatio',
   'divGrowth','divYield','divNisaRatio',
   'monthlyLifeExHouse','annualSpecial','sideIncomeGross','sideExpenseRatio','sideIncomeEndAge','inflation',
-  'expenseInputMode',
-  'exFood','exUtil','exComm','exDaily','exCloth','exMedical','exCar','exHobby','exSubsc','exInsurance','exOther',
+  'budgetSheetJson',
   'loanBalance','loanRate','loanYears','loanMonthly','loanBonus',
   'taxCreditYears','taxCreditAmount','loanPayoff','payoffTiming','payoffCustomYear',
   'child1Path','child2Path',
@@ -2433,7 +2486,7 @@ function loadData() {
     }
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
     if (typeof renderSpotEvents === 'function') renderSpotEvents();
-    if (typeof applyExpenseMode === 'function') applyExpenseMode();
+    if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
     calculate(); showToast('読み込みました');
   } catch(e) { showToast('読込に失敗'); }
 }
@@ -2526,7 +2579,7 @@ function applyAllData(data) {
     }
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
     if (typeof renderSpotEvents === 'function') renderSpotEvents();  // ライフイベントリストを再描画
-    if (typeof applyExpenseMode === 'function') applyExpenseMode();
+    if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
     calculate();
   } finally {
     isApplyingCloud = false;
@@ -3562,12 +3615,10 @@ function calculate() {
     sliderDisplays[key].textContent = parseFloat(inputs[key].value).toFixed(noDecimal.includes(key) ? 0 : 1);
   }
 
-  // ★NEW 生活費がカテゴリ別モードなら合計を月額生活費へ反映（他計算より先）
-  if (inputs.expenseInputMode && inputs.expenseInputMode.value === 'detail') {
-    const sum = Math.round(expenseCatSum() * 10) / 10;
-    if (inputs.monthlyLifeExHouse) inputs.monthlyLifeExHouse.value = sum;
-    const sumEl = document.getElementById('expenseDetailSum');
-    if (sumEl) sumEl.textContent = sum.toFixed(1);
+  // ★NEW 年間収支シートにデータがあれば生活費系の月平均を月額生活費へ反映（他計算より先）
+  if (typeof budgetHasData === 'function' && budgetHasData()) {
+    const v = Math.round(budgetLivingMonthlyAvg(getBudget()) * 10) / 10;
+    if (inputs.monthlyLifeExHouse) inputs.monthlyLifeExHouse.value = v;
   }
 
   // ★ 厚生年金加入年数を自動計算（就職年齢 〜 メインシナリオFIRE年齢）
