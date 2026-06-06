@@ -294,10 +294,10 @@ header {
   .compare-table td { padding: 7px 3px; }
   .compare-table .num { font-size: 11px; }
 
-  /** ライフイベント・プランナー：モバイルで入力しやすく */
-  #spotEventList .le-card input,
-  #spotEventList .le-card select { font-size: 13px !important; padding: 8px 6px !important; }
-  #addSpotEventBtn { padding: 11px !important; font-size: 12.5px !important; }
+  /** ライフプラン年表：モバイルで編集しやすく */
+  #lifePlanTimeline .lp-editor input,
+  #lifePlanTimeline .lp-editor select { font-size: 13px !important; padding: 8px 6px !important; }
+  .lp-add { padding: 3px 10px !important; font-size: 13px !important; }
 
   /** 手取り・副収入の自動表示が折り返してもきれいに */
   #salaryNetDisp, #sideIncomeNetDisp { font-size: 13px; }
@@ -438,9 +438,32 @@ header {
 }
 .field { margin-bottom: 12px; }
 .field:last-child { margin-bottom: 0; }
-/* ★NEW ライフプラン年表 */
+/* ★NEW ライフプラン年表（直接編集） */
 #lifePlanTimeline table td { padding: 5px 8px; border-bottom: 1px solid var(--border-soft); }
 #lifePlanTimeline table tbody tr:hover { background: var(--teal-bg) !important; }
+.lp-chip { display:inline-block; font-size:10px; padding:2px 7px; border-radius:10px; margin:1px 3px 1px 0; white-space:nowrap; }
+.lp-chip.auto { background:#eef1f4; color:#5b6670; }
+.lp-chip.lp-user { cursor:pointer; font-weight:600; }
+.lp-chip.lp-user.expense { background:#fde8e8; color:#c0392b; }
+.lp-chip.lp-user.income  { background:#e3f4e8; color:#1e8449; }
+.lp-chip.lp-rep { background:#f3eee4; color:#9a8c70; cursor:pointer; }
+.lp-chip.lp-user b { margin-left:4px; cursor:pointer; opacity:.6; }
+.lp-chip.lp-user b:hover { opacity:1; }
+.lp-add { border:1px dashed var(--teal); background:var(--teal-bg); color:var(--teal-deep); font-weight:700; cursor:pointer; border-radius:10px; font-size:11px; line-height:1; padding:2px 7px; margin:1px 0; font-family:inherit; }
+.lp-add:hover { background:var(--teal); color:#fff; }
+.lp-evcell { min-width:200px; }
+.lp-editor-row td { background:var(--teal-bg) !important; padding:10px !important; }
+.lp-editor input, .lp-editor select { padding:6px 8px; font-size:12px; border:1px solid var(--border); background:#fff; font-family:inherit; }
+.lp-editor button { padding:6px 12px; font-size:12px; font-weight:600; border:none; border-radius:4px; cursor:pointer; font-family:inherit; }
+/* ★NEW アプリ・モード切替（ライフプラン / FIRE診断） */
+.app-mode-bar { display:flex; gap:10px; max-width:1400px; margin:0 auto 18px; padding:0 20px; }
+.app-mode-btn { flex:1; padding:14px 12px; border:2px solid var(--border); background:var(--bg-card); border-radius:10px; cursor:pointer; font-family:inherit; font-size:15px; font-weight:700; color:var(--ink-mute); transition:all .15s; text-align:center; }
+.app-mode-btn .sub { display:block; font-size:11px; font-weight:400; margin-top:3px; opacity:.85; }
+.app-mode-btn:hover { border-color:var(--teal); }
+.app-mode-btn.active { border-color:var(--teal); background:var(--teal); color:#fff; }
+body.mode-plan .mode-sim { display:none !important; }
+body.mode-sim .mode-plan { display:none !important; }
+@media (max-width:600px){ .app-mode-bar { padding:0 10px; gap:6px; } .app-mode-btn { font-size:13px; padding:11px 6px; } .app-mode-btn .sub { font-size:9.5px; } }
 /* ★NEW 生活費カテゴリ別入力 */
 .ex-cat-row { display: grid; grid-template-columns: 1fr 76px auto; gap: 8px; align-items: center; }
 .ex-cat-label { font-size: 12px; color: var(--ink-soft); }
@@ -1133,19 +1156,25 @@ select:focus { border-color: var(--teal); }
     </div>
   </div>
 
+  <!-- ★NEW アプリ・モード切替 -->
+  <div class="app-mode-bar">
+    <button type="button" class="app-mode-btn active" data-appmode="plan">📋 ライフプランを立てる<span class="sub">家族・収入・支出・ライフイベントを年表で設計</span></button>
+    <button type="button" class="app-mode-btn" data-appmode="sim">🔥 FIREできるか診断する<span class="sub">運用・税金・年金・破綻確率を分析</span></button>
+  </div>
+
   <div class="layout">
     <!-- 入力パネル -->
     <div class="input-panel">
       <div class="tabs">
-        <button class="tab active" data-tab="basic"><span class="num">01</span>基本</button>
-        <button class="tab" data-tab="invest"><span class="num">02</span>運用</button>
-        <button class="tab" data-tab="life"><span class="num">03</span>生活</button>
-        <button class="tab" data-tab="loan"><span class="num">04</span>住宅</button>
-        <button class="tab" data-tab="edu"><span class="num">05</span>教育</button>
-        <button class="tab" data-tab="tax"><span class="num">06</span>税金</button>
-        <button class="tab" data-tab="future"><span class="num">07</span>老後</button>
-        <button class="tab" data-tab="bucket"><span class="num">08</span>バケツ</button>
-        <button class="tab" data-tab="risk"><span class="num">09</span>リスク</button>
+        <button class="tab active mode-plan" data-tab="basic"><span class="num">01</span>基本</button>
+        <button class="tab mode-sim" data-tab="invest"><span class="num">02</span>運用</button>
+        <button class="tab mode-plan" data-tab="life"><span class="num">03</span>生活</button>
+        <button class="tab mode-plan" data-tab="loan"><span class="num">04</span>住宅</button>
+        <button class="tab mode-plan" data-tab="edu"><span class="num">05</span>教育</button>
+        <button class="tab mode-sim" data-tab="tax"><span class="num">06</span>税金</button>
+        <button class="tab mode-sim" data-tab="future"><span class="num">07</span>老後</button>
+        <button class="tab mode-sim" data-tab="bucket"><span class="num">08</span>バケツ</button>
+        <button class="tab mode-sim" data-tab="risk"><span class="num">09</span>リスク</button>
       </div>
 
       <div class="tab-panels">
@@ -1406,10 +1435,8 @@ select:focus { border-color: var(--teal); }
             </div>
           </div>
           <div class="subsection">
-            <div class="subsection-title">— 📅 ライフイベント・プランナー ★NEW</div>
-            <p class="desc" style="font-size:11px;margin-bottom:10px;">将来のライフプランを自由に登録。<strong>支出も収入も</strong>、時期は<strong>年齢でも西暦でも</strong>、車のように<strong>繰り返し</strong>も設定できます。下の「ライフプラン年表」と資産推移に自動反映されます。</p>
-            <div id="spotEventList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
-            <button type="button" id="addSpotEventBtn" style="width:100%;padding:8px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">＋ ライフイベントを追加</button>
+            <div class="subsection-title">— 📅 ライフイベント（車・旅行・退職金など）</div>
+            <p class="desc" style="font-size:11px;margin-bottom:10px;line-height:1.6;">将来の支出・収入は、右の<strong>「ライフプラン年表」で各年の <span style="background:var(--teal);color:#fff;border-radius:8px;padding:0 6px;font-weight:700;">＋</span> を押して直接追加</strong>します。スプレッドシートのように、見ながら書き込めます。</p>
             <input type="hidden" id="spotEventsJson" value="[]">
           </div>
           <div class="field">
@@ -1770,7 +1797,7 @@ select:focus { border-color: var(--teal); }
       </div>
 
       <!-- 常時表示フッター：シミュレーション実行ボタン -->
-      <div class="sim-footer">
+      <div class="sim-footer mode-sim">
         <div class="sim-footer-desc">グラフ・税金は入力変更で<b>自動更新</b>。破綻確率は↓を押して計算</div>
         <button class="run-sim-btn" id="runSimBtn">▶ 破綻確率シミュレーション実行</button>
       </div>
@@ -1784,13 +1811,25 @@ select:focus { border-color: var(--teal); }
         <div class="result-sub" id="fireAge">—</div>
       </div>
 
-      <div class="fail-rate-banner" id="failRateBanner">
+      <!-- ★NEW ライフプラン年表（直接編集・プランのメイン） -->
+      <div class="card mode-plan" id="lifePlanCard">
+        <h3><span class="dot"></span>📅 ライフプラン年表（直接書き込みで設計）</h3>
+        <div style="font-size:11.5px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
+          各年の <span style="background:var(--teal);color:#fff;border-radius:8px;padding:0 6px;font-weight:700;">＋</span> を押すと、その年に<strong>ライフイベント（支出・収入）を直接追加</strong>できます。車・旅行・住宅修繕・退職金など。追加したイベントは<span style="color:#c0392b;">赤</span>＝支出／<span style="color:#1e8449;">緑</span>＝収入で表示。クリックで編集・×で削除。<br>
+          <span style="font-size:10.5px;color:var(--ink-mute);">進学・FIRE・ローン完済・年金開始などは入力から自動表示。資産が前年より減る年は<span style="color:var(--rose);">赤字</span>。横スクロールで全年確認できます。</span>
+        </div>
+        <div id="lifePlanTimeline">
+          <div style="text-align:center;padding:24px;color:var(--ink-mute);font-size:12px;font-style:italic;">入力すると年表が表示されます</div>
+        </div>
+      </div>
+
+      <div class="fail-rate-banner mode-sim" id="failRateBanner">
         <div class="label">現在の計画 / 破綻確率</div>
         <div class="num"><span id="failRateNum">--</span>%</div>
         <div class="verdict" id="failRateVerdict">「シミュレーション実行」を押してください</div>
       </div>
 
-      <div class="recommend" id="recommendBox">
+      <div class="recommend mode-sim" id="recommendBox">
         <h3 id="recommendBoxTitle">破綻確率5%以下にするための安全資産ライン</h3>
         <div style="font-size:11px;color:var(--ink-mute);margin-bottom:12px;line-height:1.6;">
           Monte Carlo 1000回の結果。「FIRE時の予測資産」と比べて<strong id="safetyGapNote">--</strong>
@@ -1802,11 +1841,11 @@ select:focus { border-color: var(--teal); }
         </div>
       </div>
 
-      <div id="warningBox"></div>
-      <div id="shockBox"></div>
-      <div id="loanWarningBox"></div>
+      <div id="warningBox" class="mode-sim"></div>
+      <div id="shockBox" class="mode-sim"></div>
+      <div id="loanWarningBox" class="mode-sim"></div>
 
-      <div class="summary-grid">
+      <div class="summary-grid mode-plan">
         <div class="summary-card">
           <div class="label">FIRE時の予測資産</div>
           <div class="value" id="targetAssets">--</div>
@@ -1830,7 +1869,7 @@ select:focus { border-color: var(--teal); }
       </div>
 
       <!-- 3シナリオ比較カード -->
-      <div class="card" id="threeScenarioCard">
+      <div class="card mode-sim" id="threeScenarioCard">
         <h3><span class="dot"></span>3シナリオ比較（FIRE年齢 × 税・社保・年金・破綻確率）</h3>
         <div id="threeScenarioGrid">
           <div style="text-align:center;padding:24px;color:var(--ink-mute);font-size:12px;font-style:italic;">
@@ -1839,7 +1878,7 @@ select:focus { border-color: var(--teal); }
         </div>
       </div>
 
-      <div class="card">
+      <div class="card mode-sim">
         <h3><span class="dot"></span>ストレステスト各シナリオの破綻確率</h3>
         <div class="stress-grid" id="stressGrid">
           <div style="text-align:center;padding:24px;color:var(--ink-mute);font-size:12px;font-style:italic;">
@@ -1848,7 +1887,7 @@ select:focus { border-color: var(--teal); }
         </div>
       </div>
 
-      <div class="card">
+      <div class="card mode-sim">
         <h3><span class="dot"></span>退職年齢別 シミュレーション比較</h3>
         <div id="ageCompareGrid" style="font-size:12.5px;">
           <div style="text-align:center;padding:24px;color:var(--ink-mute);font-size:12px;font-style:italic;">
@@ -1858,7 +1897,7 @@ select:focus { border-color: var(--teal); }
       </div>
 
       <!-- 月額固定費まとめカード -->
-      <div class="card">
+      <div class="card mode-plan">
         <h3><span class="dot"></span>FIRE後の月額固定費まとめ</h3>
         <div class="monthly-summary" id="monthlySummary">
           <div class="ms-section-head">収入</div>
@@ -1917,7 +1956,7 @@ select:focus { border-color: var(--teal); }
         <div style="font-size:11px;color:var(--ink-mute);margin-top:12px;">※ FIRE直後（任意継続期間を除く）の試算。住宅費・教育費・臨時支出は含まず。</div>
       </div>
 
-      <div class="card">
+      <div class="card mode-sim">
         <h3><span class="dot"></span>FIRE直後の税金・社会保険(年額)</h3>
         <table class="tax-table">
           <tr><td>国民健康保険税（0〜74歳）</td><td id="taxKokuho">--</td></tr>
@@ -1930,7 +1969,7 @@ select:focus { border-color: var(--teal); }
         </table>
       </div>
 
-      <div class="card">
+      <div class="card mode-sim">
         <h3><span class="dot"></span>退職直後の医療保険: 任意継続 vs 国保</h3>
         <table class="compare-table">
           <thead>
@@ -1949,7 +1988,7 @@ select:focus { border-color: var(--teal); }
         <div id="compareAdvice" style="margin-top:10px;font-size:12px;"></div>
       </div>
 
-      <div class="card">
+      <div class="card mode-sim">
         <h3><span class="dot"></span>FIRE時の資産配分(バケツ戦略)</h3>
         <div style="font-size:11.5px;color:var(--ink-mute);margin-bottom:12px;padding:8px 12px;background:var(--bg-subtle);border-left:3px solid var(--teal);">
           ⚙️ 現金確保額を変更する場合は左パネル <button onclick="document.querySelector('[data-tab=bucket]').click();document.querySelector('[data-tab=bucket]').scrollIntoView({behavior:'smooth'})" style="background:var(--teal);color:#fff;border:none;border-radius:3px;padding:2px 8px;font-size:11px;cursor:pointer;font-family:inherit;">08 バケツ</button> タブから設定できます
@@ -1964,7 +2003,7 @@ select:focus { border-color: var(--teal); }
         </div>
       </div>
 
-      <div class="card">
+      <div class="card mode-plan">
         <h3><span class="dot"></span>総資産推移(現在〜寿命まで・決定論的予測)</h3>
         <div class="chart-container"><canvas id="totalAssetChart"></canvas></div>
         <div style="font-size:11px;color:var(--ink-soft);margin-top:8px;">
@@ -1973,7 +2012,7 @@ select:focus { border-color: var(--teal); }
         </div>
       </div>
 
-      <div class="card">
+      <div class="card mode-sim">
         <h3><span class="dot"></span>資産推移シミュレーション(中央値+不確実性レンジ)</h3>
         <div id="assetChartDesc" style="font-size:12px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
           ▶ <strong id="assetChartScenarioLabel" style="color:var(--teal-deep);">—</strong> でFIREした場合の資産推移（1000回試行）。<br>
@@ -1987,21 +2026,9 @@ select:focus { border-color: var(--teal); }
         </div>
       </div>
 
-      <div class="card">
+      <div class="card mode-plan">
         <h3><span class="dot"></span>年齢別 年間収支の構成</h3>
         <div class="chart-container"><canvas id="cashflowChart"></canvas></div>
-      </div>
-
-      <!-- ★NEW ライフプラン年表 -->
-      <div class="card" id="lifePlanCard">
-        <h3><span class="dot"></span>📅 ライフプラン年表（西暦・家族・イベント・収支）</h3>
-        <div style="font-size:11.5px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
-          入力した家族構成・教育コース・FIRE年齢などから<strong>自動生成</strong>した年表です（追加入力不要）。横スクロールで全年を確認できます。<br>
-          <span style="font-size:10.5px;color:var(--ink-mute);">※ 現役期間の「支出」は手取り給与から積立を除いた生活等支出の概算。FIRE後は生活費＋税社保＋教育費等の合計。資産が前年より減る年は<span style="color:var(--rose);">赤字</span>で表示。</span>
-        </div>
-        <div id="lifePlanTimeline">
-          <div style="text-align:center;padding:24px;color:var(--ink-mute);font-size:12px;font-style:italic;">入力すると自動で年表が表示されます</div>
-        </div>
       </div>
 
       <div class="note">
@@ -2266,128 +2293,86 @@ INPUT_IDS.forEach(id => { inputs[id] = document.getElementById(id); });
  *  ★NEW ライフイベント・プランナー UI 管理
  *  （旧「計画購入」を拡張: 収入/支出・西暦/年齢・繰返し対応）
  *  ==================================== */
-const LE_CATEGORIES = [
-  { key:'travel',  label:'✈️ 旅行・レジャー' },
-  { key:'car',     label:'🚗 車' },
-  { key:'house',   label:'🏠 住宅・修繕' },
-  { key:'edu',     label:'🎓 教育・習い事' },
-  { key:'medical', label:'🏥 医療・介護' },
-  { key:'income',  label:'💰 収入・臨時収入' },
-  { key:'other',   label:'📌 その他' },
-];
 const DEFAULT_SPOT_EVENTS = [
   { name:'車買い替え', category:'car',   type:'expense', mode:'age', value:50, amount:300, repeat:10 },
   { name:'住宅修繕',   category:'house', type:'expense', mode:'age', value:55, amount:200, repeat:0  },
-  { name:'家族旅行',   category:'travel',type:'expense', mode:'age', value:45, amount:30,  repeat:1  },
 ];
 
 /** 旧データ形式 {name,age,amount,repeat} を新形式へ移行 */
 function migrateLifeEvent(ev) {
   if (!ev) return null;
-  if (ev.mode) return ev; // 既に新形式
+  if (ev.mode) return {
+    name: ev.name||'', category: ev.category||'other', type: ev.type||'expense',
+    mode: ev.mode, value: +ev.value, amount: +ev.amount||0, repeat: +ev.repeat||0,
+  };
   return {
-    name: ev.name || '',
-    category: ev.category || 'other',
-    type: ev.type || 'expense',
-    mode: 'age',
-    value: +(ev.age ?? 50),
-    amount: +(ev.amount ?? 0),
-    repeat: +(ev.repeat ?? 0),
+    name: ev.name || '', category: ev.category || 'other', type: ev.type || 'expense',
+    mode: 'age', value: +(ev.age ?? 50), amount: +(ev.amount ?? 0), repeat: +(ev.repeat ?? 0),
   };
 }
 
-function getLifeEventsFromUI() {
-  const list = document.querySelectorAll('#spotEventList .le-card');
-  const arr = [];
-  list.forEach(row => {
-    const name     = row.querySelector('.le-name').value.trim();
-    const category = row.querySelector('.le-cat').value;
-    const type     = row.querySelector('.le-type').value;
-    const mode     = row.querySelector('.le-mode').value;
-    const value    = +row.querySelector('.le-value').value;
-    const amount   = +row.querySelector('.le-amount').value;
-    const repeat   = +row.querySelector('.le-repeat').value;
-    if (name && value && amount) arr.push({ name, category, type, mode, value, amount, repeat });
-  });
-  return arr;
+/** spotEventsJson から配列を取得（万円単位のまま） */
+function getLifeEvents() {
+  try {
+    const arr = JSON.parse(document.getElementById('spotEventsJson').value || '[]');
+    return (Array.isArray(arr) ? arr : []).map(migrateLifeEvent).filter(Boolean);
+  } catch { return []; }
 }
 
-function syncSpotEventsJson() {
-  const arr = getLifeEventsFromUI();
+/** 配列を spotEventsJson に書き込み、再計算・保存 */
+function setLifeEvents(arr) {
   document.getElementById('spotEventsJson').value = JSON.stringify(arr);
   if (typeof calculate === 'function') calculate();
   if (typeof debouncedSave === 'function' && !isApplyingCloud) debouncedSave();
 }
 
-function addLifeEventRow(evRaw = { name:'', category:'other', type:'expense', mode:'age', value:50, amount:100, repeat:0 }) {
-  const ev = migrateLifeEvent(evRaw);
-  const list = document.getElementById('spotEventList');
-  const card = document.createElement('div');
-  card.className = 'le-card';
-  card.style.cssText = 'background:var(--bg-card);border:1px solid var(--border-soft);border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:6px;';
-  const catOpts  = LE_CATEGORIES.map(c => `<option value="${c.key}" ${c.key===ev.category?'selected':''}>${c.label}</option>`).join('');
-  const inS = 'padding:5px 6px;font-size:11.5px;border:1px solid var(--border);background:var(--bg-subtle);';
-  card.innerHTML = `
-    <div style="display:flex;gap:5px;align-items:center;">
-      <input type="text" class="le-name" placeholder="イベント名（例: ハワイ旅行）" value="${ev.name}" style="${inS}flex:1;">
-      <button type="button" class="le-del" style="background:none;border:none;font-size:18px;color:var(--rose);cursor:pointer;padding:0 2px;line-height:1;">×</button>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
-      <select class="le-type" style="${inS}">
-        <option value="expense" ${ev.type==='expense'?'selected':''}>支出 −</option>
-        <option value="income"  ${ev.type==='income' ?'selected':''}>収入 +</option>
-      </select>
-      <select class="le-cat" style="${inS}">${catOpts}</select>
-    </div>
-    <div style="display:grid;grid-template-columns:64px 1fr;gap:5px;align-items:center;">
-      <select class="le-mode" style="${inS}">
-        <option value="age"  ${ev.mode==='age' ?'selected':''}>年齢</option>
-        <option value="year" ${ev.mode==='year'?'selected':''}>西暦</option>
-      </select>
-      <div style="display:flex;gap:4px;align-items:center;">
-        <input type="number" class="le-value" value="${ev.value}" min="0" max="2100" style="${inS}width:62px;text-align:right;">
-        <span class="le-unit" style="font-size:11px;color:var(--ink-mute);white-space:nowrap;">${ev.mode==='year'?'年':'歳'}</span>
-        <input type="number" class="le-amount" placeholder="万円" value="${ev.amount}" min="0" step="10" style="${inS}flex:1;text-align:right;">
-        <span style="font-size:11px;color:var(--ink-mute);">万</span>
-      </div>
-    </div>
-    <div style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--ink-mute);">
-      <span>繰り返し</span>
-      <input type="number" class="le-repeat" value="${ev.repeat}" min="0" max="30" style="${inS}width:54px;text-align:right;" title="0=一度きり、N=N年ごと">
-      <span>年ごと（0＝一度きり）</span>
-    </div>
-  `;
-  list.appendChild(card);
-  // モード切替で単位ラベルを更新
-  const modeSel = card.querySelector('.le-mode');
-  const unitEl  = card.querySelector('.le-unit');
-  modeSel.addEventListener('change', () => { unitEl.textContent = modeSel.value==='year' ? '年' : '歳'; });
-  card.querySelectorAll('input, select').forEach(inp => {
-    inp.addEventListener('input', syncSpotEventsJson);
-    inp.addEventListener('change', syncSpotEventsJson);
-  });
-  card.querySelector('.le-del').addEventListener('click', () => { card.remove(); syncSpotEventsJson(); });
+/** イベントの基準年齢（本人）を返す */
+function lifeEventBaseAge(ev, startAge) {
+  return ev.mode === 'year' ? startAge + (+ev.value - BASE_YEAR) : +ev.value;
 }
 
+/** 初回などイベント未設定ならデフォルトを入れる（年表からは触れないため） */
 function renderSpotEvents() {
-  const list = document.getElementById('spotEventList');
-  if (!list) return;
-  let arr;
   try {
-    arr = JSON.parse(document.getElementById('spotEventsJson').value || '[]');
-    if (!Array.isArray(arr) || arr.length === 0) arr = DEFAULT_SPOT_EVENTS;
-  } catch { arr = DEFAULT_SPOT_EVENTS; }
-  list.innerHTML = '';
-  arr.forEach(addLifeEventRow);
-  syncSpotEventsJson();
+    const cur = JSON.parse(document.getElementById('spotEventsJson').value || '[]');
+    if (!Array.isArray(cur) || cur.length === 0)
+      document.getElementById('spotEventsJson').value = JSON.stringify(DEFAULT_SPOT_EVENTS);
+  } catch {
+    document.getElementById('spotEventsJson').value = JSON.stringify(DEFAULT_SPOT_EVENTS);
+  }
 }
 
+document.addEventListener('DOMContentLoaded', () => { renderSpotEvents(); });
+
+/** ====================================
+ *  ★NEW アプリ・モード切替（ライフプラン / FIRE診断）
+ *  ==================================== */
+const APP_MODE_KEY = 'sideFireAppMode';
+function setAppMode(mode) {
+  mode = (mode === 'sim') ? 'sim' : 'plan';
+  document.body.classList.toggle('mode-plan', mode === 'plan');
+  document.body.classList.toggle('mode-sim',  mode === 'sim');
+  document.querySelectorAll('.app-mode-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.appmode === mode));
+  // アクティブな入力タブが現モードで非表示なら、先頭の表示タブへ
+  const activeTab = document.querySelector('.tab.active');
+  if (!activeTab || activeTab.classList.contains(mode === 'plan' ? 'mode-sim' : 'mode-plan')) {
+    const firstVisible = document.querySelector('.tab.mode-' + mode);
+    if (firstVisible) firstVisible.click();
+  }
+  try { localStorage.setItem(APP_MODE_KEY, mode); } catch {}
+  // 表示切替後にグラフを再描画（display:none→表示でサイズが崩れるため）
+  setTimeout(() => {
+    [assetChart, cashflowChart, totalAssetChart, bucketChart].forEach(c => { try { c && c.resize(); } catch {} });
+  }, 60);
+}
+document.querySelectorAll('.app-mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => setAppMode(btn.dataset.appmode));
+});
 document.addEventListener('DOMContentLoaded', () => {
-  renderSpotEvents();
-  document.getElementById('addSpotEventBtn').addEventListener('click', () => {
-    addLifeEventRow({ name:'', category:'other', type:'expense', mode:'age', value:50, amount:100, repeat:0 });
-    syncSpotEventsJson();
-  });
+  let m = 'plan';
+  try { m = localStorage.getItem(APP_MODE_KEY) || 'plan'; } catch {}
+  setAppMode(m);
 });
 
 const sliderDisplays = {
@@ -3368,18 +3353,16 @@ function ageToYear(params, ageH) {
  * 既存の入力だけからライフイベントを自動生成する。
  * 返り値: { 本人年齢: ["イベント1","イベント2"] }
  */
-function buildLifeEvents(params, fireYear) {
+/** 自動イベント（入力から導出。編集不可）: 本人年齢 → [label] */
+function buildAutoEvents(params, fireYear) {
   const map = {};
   const add = (ageH, label) => {
     if (ageH == null || isNaN(ageH)) return;
     (map[ageH] = map[ageH] || []).push(label);
   };
   const sa = params.startAgeOriginal;
-
-  // 子供の進学マイルストーン（現在の子の年齢から逆算）
   const childMilestones = [
-    [6,  '小学校入学'], [12, '中学校入学'], [15, '高校入学'],
-    [18, '大学入学'],   [22, '大学卒業'],
+    [6,'小学校入学'], [12,'中学校入学'], [15,'高校入学'], [18,'大学入学'], [22,'大学卒業'],
   ];
   params.childAgesOriginal.forEach((cAge, i) => {
     const label = i === 0 ? '子1' : '子2';
@@ -3387,86 +3370,84 @@ function buildLifeEvents(params, fireYear) {
       const ageH = sa + (mAge - cAge);
       if (ageH >= sa) add(ageH, `${label} ${mLabel}`);
     });
-    // 独立
     const indep = i === 0 ? params.child1IndependAge : params.child2IndependAge;
     if (indep) { const ageH = sa + (indep - cAge); if (ageH >= sa) add(ageH, `${label} 独立`); }
   });
-
-  // FIRE達成
   if (fireYear >= 0) add(sa + fireYear, '🔥 FIRE達成');
-
-  // 住宅ローン完済
   if (params.loanBalance > 0) {
     const payoffYear = getPayoffYear(params, fireYear);
     if (payoffYear && payoffYear > 0) add(sa + payoffYear, '🏠 ローン完済');
   }
-
-  // 年金受給開始
   if (params.pensionStartAge) add(params.pensionStartAge, '💰 年金受給開始');
-
-  // 副業終了
-  if (params.sideIncomeEndAge && params.sideIncomeGross > 0)
-    add(params.sideIncomeEndAge, '副業終了');
-
-  // 配偶者パート（妻年齢 → 本人年齢に変換）
+  if (params.sideIncomeEndAge && params.sideIncomeGross > 0) add(params.sideIncomeEndAge, '副業終了');
   if (params.spouseIncomeMonthly > 0) {
-    const wd = sa - params.ageWifeOriginal; // 本人年齢 = 妻年齢 + wd
+    const wd = sa - params.ageWifeOriginal;
     add(params.spouseIncomeStartAge + wd, '配偶者パート開始');
     add(params.spouseIncomeEndAge   + wd, '配偶者パート終了');
   }
-
-  // iDeCo一時金
   if (params.idecoCurrent > 0 || params.idecoMonthly > 0) add(60, 'iDeCo一時金');
-
-  // ライフイベント（支出/収入）
-  const catIcon = { travel:'✈️', car:'🚗', house:'🏠', edu:'🎓', medical:'🏥', income:'💰', other:'📌' };
-  (params.spotEvents || []).forEach(ev => {
-    const icon = ev.type === 'income' ? '💰' : (catIcon[ev.category] || '🛒');
-    const sign = ev.type === 'income' ? '+' : '';
-    const man  = (ev.amount/10000).toFixed(0);
-    const label = `${icon} ${ev.name}(${sign}${man}万)`;
-    const labelRep = `${icon} ${ev.name}`;
-    add(ev.age, label);
-    if (ev.repeat > 0) {
-      for (let a = ev.age + ev.repeat; a <= params.lifeExpectancy; a += ev.repeat)
-        add(a, labelRep);
-    }
-  });
-
   return map;
 }
 
-/** ライフプラン年表を描画 */
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/** ライフプラン年表を描画（直接編集対応） */
+let LP_TIMELINE_CTX = null; // {params, fireYear} 編集ハンドラ用
 function renderLifePlanTimeline(params, fireYear) {
   const host = document.getElementById('lifePlanTimeline');
   if (!host) return;
   const fy = Math.max(fireYear, 0);
+  LP_TIMELINE_CTX = { startAge: params.startAgeOriginal, lifeExpectancy: params.lifeExpectancy };
   const res = simulate(params, fy, false, true);
-  const events = buildLifeEvents(params, fy);
+  const auto = buildAutoEvents(params, fy);
+  const sa = params.startAgeOriginal;
   const hasChild2 = params.childAgesOriginal.length > 1 && params.childAgesOriginal[1] >= 0;
 
+  // ユーザーイベント（編集対象）を年齢ごとに展開
+  const userEvents = getLifeEvents();
+  const userByAge = {};
+  userEvents.forEach((ev, idx) => {
+    const baseAge = lifeEventBaseAge(ev, sa);
+    (userByAge[baseAge] = userByAge[baseAge] || []).push({ idx, ev, src:true });
+    if (ev.repeat > 0)
+      for (let a = baseAge + ev.repeat; a <= params.lifeExpectancy; a += ev.repeat)
+        (userByAge[a] = userByAge[a] || []).push({ idx, ev, src:false });
+  });
+
+  const colCount = hasChild2 ? 10 : 9;
   let rows = '';
   res.detail.forEach(d => {
     const seireki = ageToYear(params, d.ageH);
-    const evList  = events[d.ageH] || [];
-    const isFire  = d.ageH === params.startAgeOriginal + fy;
+    const isFire  = d.ageH === sa + fy;
     const phase   = d.isWorking
       ? '<span style="color:var(--teal);font-weight:600;">現役</span>'
       : '<span style="color:var(--amber);font-weight:600;">FIRE</span>';
-    const evHtml = evList.length
-      ? evList.map(e => `<span style="display:inline-block;background:var(--teal-bg);color:var(--teal-deep);font-size:10px;padding:1px 6px;border-radius:3px;margin:1px 2px 1px 0;white-space:nowrap;">${e}</span>`).join('')
-      : '<span style="color:var(--ink-mute);">—</span>';
+    // 自動チップ
+    let chips = (auto[d.ageH] || []).map(e => `<span class="lp-chip auto">${esc(e)}</span>`).join('');
+    // ユーザーチップ
+    (userByAge[d.ageH] || []).forEach(o => {
+      const ev = o.ev;
+      const icon = ev.type === 'income' ? '💰' : '🛒';
+      const sign = ev.type === 'income' ? '+' : '−';
+      const man  = (+ev.amount).toLocaleString();
+      const rep  = ev.repeat > 0 ? ` ↻${ev.repeat}y` : '';
+      if (o.src) {
+        chips += `<span class="lp-chip lp-user ${ev.type}" data-edit="${o.idx}">${icon}${esc(ev.name)} ${sign}${man}万${rep}<b data-del="${o.idx}">×</b></span>`;
+      } else {
+        chips += `<span class="lp-chip lp-rep" data-edit="${o.idx}">${icon}${esc(ev.name)} ${sign}${man}万</span>`;
+      }
+    });
+    chips += `<button type="button" class="lp-add" data-add="${seireki}" title="${seireki}年にイベント追加">＋</button>`;
     const c2 = hasChild2 ? `<td style="text-align:center;">${d.cAges[1]}</td>` : '';
-    // 資産が前年より減る年は赤系で強調
     const assetColor = (!d.isWorking && d.drawdown > 0) ? 'color:var(--rose);' : 'color:var(--teal-deep);';
-    const rowBg = isFire ? 'background:rgba(217,164,65,0.10);' : (evList.length ? 'background:var(--bg-subtle);' : '');
-    rows += `<tr style="${rowBg}">
+    const rowBg = isFire ? 'background:rgba(217,164,65,0.10);' : '';
+    rows += `<tr data-year="${seireki}" style="${rowBg}">
       <td style="font-weight:600;white-space:nowrap;">${seireki}</td>
       <td style="text-align:center;font-weight:600;">${d.ageH}</td>
       <td style="text-align:center;color:var(--ink-mute);">${d.ageW}</td>
       <td style="text-align:center;">${d.cAges[0]}</td>${c2}
       <td style="text-align:center;">${phase}</td>
-      <td>${evHtml}</td>
+      <td class="lp-evcell">${chips}</td>
       <td style="text-align:right;white-space:nowrap;">${d.income.toLocaleString()}</td>
       <td style="text-align:right;white-space:nowrap;">${d.expense.toLocaleString()}</td>
       <td class="mono" style="text-align:right;white-space:nowrap;font-weight:700;${assetColor}">${d.assets.toLocaleString()}</td>
@@ -3475,16 +3456,16 @@ function renderLifePlanTimeline(params, fireYear) {
 
   const c2head = hasChild2 ? '<th style="text-align:center;">子2</th>' : '';
   host.innerHTML = `
-    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:6px;">
-      <table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:640px;">
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:6px;max-height:560px;overflow-y:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:680px;">
         <thead>
-          <tr style="background:var(--ink);color:#fff;position:sticky;top:0;">
+          <tr style="background:var(--ink);color:#fff;position:sticky;top:0;z-index:1;">
             <th style="padding:6px 8px;text-align:left;">西暦</th>
             <th style="padding:6px 4px;text-align:center;">本人</th>
             <th style="padding:6px 4px;text-align:center;">妻</th>
             <th style="padding:6px 4px;text-align:center;">子1</th>${c2head}
             <th style="padding:6px 4px;text-align:center;">区分</th>
-            <th style="padding:6px 8px;text-align:left;">主なライフイベント</th>
+            <th style="padding:6px 8px;text-align:left;">ライフイベント（＋で追加）</th>
             <th style="padding:6px 8px;text-align:right;">収入<br><small style="font-weight:400;opacity:.7;">万/年</small></th>
             <th style="padding:6px 8px;text-align:right;">支出<br><small style="font-weight:400;opacity:.7;">万/年</small></th>
             <th style="padding:6px 8px;text-align:right;">予測資産<br><small style="font-weight:400;opacity:.7;">万円</small></th>
@@ -3493,6 +3474,71 @@ function renderLifePlanTimeline(params, fireYear) {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
+
+  // クリック委譲（追加・編集・削除）
+  const table = host.querySelector('table');
+  table.addEventListener('click', (e) => {
+    const addBtn = e.target.closest('[data-add]');
+    const delBtn = e.target.closest('[data-del]');
+    const editEl = e.target.closest('[data-edit]');
+    if (delBtn) {
+      e.stopPropagation();
+      const idx = +delBtn.dataset.del;
+      const arr = getLifeEvents(); arr.splice(idx, 1); setLifeEvents(arr);
+      return;
+    }
+    if (addBtn) {
+      openLifeEventEditor(addBtn.closest('tr'), +addBtn.dataset.add, null);
+      return;
+    }
+    if (editEl) {
+      openLifeEventEditor(editEl.closest('tr'), +editEl.closest('tr').dataset.year, +editEl.dataset.edit);
+    }
+  });
+}
+
+/** 年表の行直下にインライン編集フォームを開く */
+function openLifeEventEditor(tr, year, editIdx) {
+  document.querySelectorAll('.lp-editor-row').forEach(r => r.remove());
+  const colCount = tr.children.length;
+  const arr = getLifeEvents();
+  const ev = editIdx != null ? arr[editIdx] : { name:'', type:'expense', amount:'', repeat:0 };
+  const editor = document.createElement('tr');
+  editor.className = 'lp-editor-row';
+  editor.innerHTML = `<td colspan="${colCount}">
+    <div class="lp-editor" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+      <strong style="color:var(--teal-deep);white-space:nowrap;">${year}年</strong>
+      <input type="text" class="le-name" placeholder="イベント名（例: ハワイ旅行・退職金）" value="${esc(ev.name||'')}" style="flex:1;min-width:140px;">
+      <select class="le-type">
+        <option value="expense" ${ev.type!=='income'?'selected':''}>支出 −</option>
+        <option value="income"  ${ev.type==='income'?'selected':''}>収入 +</option>
+      </select>
+      <input type="number" class="le-amount" placeholder="金額" value="${ev.amount||''}" min="0" step="10" style="width:84px;text-align:right;"><span style="font-size:11px;color:var(--ink-mute);">万</span>
+      <span style="font-size:11px;color:var(--ink-mute);">繰返</span><input type="number" class="le-repeat" value="${ev.repeat||0}" min="0" max="30" style="width:52px;text-align:right;" title="0=一度きり、N=N年ごと"><span style="font-size:11px;color:var(--ink-mute);">年</span>
+      <button type="button" class="le-save" style="background:var(--teal);color:#fff;">保存</button>
+      <button type="button" class="le-cancel" style="background:#e5e0d3;color:var(--ink);">取消</button>
+      ${editIdx!=null?'<button type="button" class="le-del2" style="background:#fde8e8;color:#c0392b;">削除</button>':''}
+    </div>
+  </td>`;
+  tr.after(editor);
+  const nameEl = editor.querySelector('.le-name'); nameEl.focus();
+  const save = () => {
+    const name = nameEl.value.trim();
+    const amount = +editor.querySelector('.le-amount').value || 0;
+    const type = editor.querySelector('.le-type').value;
+    const repeat = +editor.querySelector('.le-repeat').value || 0;
+    if (!name || !amount) { nameEl.focus(); nameEl.style.borderColor = 'var(--rose)'; return; }
+    const newEv = { name, category: type==='income'?'income':'other', type, mode:'year', value: year, amount, repeat };
+    const a = getLifeEvents();
+    if (editIdx != null) a[editIdx] = newEv; else a.push(newEv);
+    setLifeEvents(a); // → calculate() → 年表再描画（エディタは消える）
+  };
+  editor.querySelector('.le-save').addEventListener('click', save);
+  editor.querySelector('.le-cancel').addEventListener('click', () => editor.remove());
+  nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  editor.querySelector('.le-amount').addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+  const del2 = editor.querySelector('.le-del2');
+  if (del2) del2.addEventListener('click', () => { const a = getLifeEvents(); a.splice(editIdx,1); setLifeEvents(a); });
 }
 
 /** ============================
