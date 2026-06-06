@@ -294,10 +294,9 @@ header {
   .compare-table td { padding: 7px 3px; }
   .compare-table .num { font-size: 11px; }
 
-  /** 計画購入リスト：金額/年齢を確保しつつ名前を広めに */
-  #spotEventList > div[style*="grid"] { gap: 4px !important; }
-  #spotEventList .spot-row { grid-template-columns: 1fr 46px 58px 44px 24px !important; gap: 4px !important; padding: 5px 5px !important; }
-  #spotEventList .spot-row input { font-size: 13px !important; padding: 7px 4px !important; }
+  /** ライフイベント・プランナー：モバイルで入力しやすく */
+  #spotEventList .le-card input,
+  #spotEventList .le-card select { font-size: 13px !important; padding: 8px 6px !important; }
   #addSpotEventBtn { padding: 11px !important; font-size: 12.5px !important; }
 
   /** 手取り・副収入の自動表示が折り返してもきれいに */
@@ -345,7 +344,6 @@ header {
   .result-main { font-size: 30px; }
   .fail-rate-banner .num { font-size: 36px; }
   .actions .btn { font-size: 11px; padding: 11px 4px; }
-  #spotEventList .spot-row { grid-template-columns: 1fr 40px 52px 40px 22px !important; }
 }
 
 /** ============== 入力パネル ============== */
@@ -1362,10 +1360,10 @@ select:focus { border-color: var(--teal); }
             </div>
           </div>
           <div class="subsection">
-            <div class="subsection-title">— 計画購入・大型支出 ★NEW</div>
-            <p class="desc" style="font-size:11px;margin-bottom:10px;">車買い替え・トラクター・住宅修繕などを年齢付きで登録。グラフ上に縦線で表示されます</p>
-            <div id="spotEventList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
-            <button type="button" id="addSpotEventBtn" style="width:100%;padding:8px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">＋ 計画支出を追加</button>
+            <div class="subsection-title">— 📅 ライフイベント・プランナー ★NEW</div>
+            <p class="desc" style="font-size:11px;margin-bottom:10px;">将来のライフプランを自由に登録。<strong>支出も収入も</strong>、時期は<strong>年齢でも西暦でも</strong>、車のように<strong>繰り返し</strong>も設定できます。下の「ライフプラン年表」と資産推移に自動反映されます。</p>
+            <div id="spotEventList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
+            <button type="button" id="addSpotEventBtn" style="width:100%;padding:8px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">＋ ライフイベントを追加</button>
             <input type="hidden" id="spotEventsJson" value="[]">
           </div>
           <div class="field">
@@ -2053,49 +2051,110 @@ const inputs = {};
 INPUT_IDS.forEach(id => { inputs[id] = document.getElementById(id); });
 
 /** ====================================
- *  ★NEW 計画購入リスト UI 管理
+ *  ★NEW ライフイベント・プランナー UI 管理
+ *  （旧「計画購入」を拡張: 収入/支出・西暦/年齢・繰返し対応）
  *  ==================================== */
+const LE_CATEGORIES = [
+  { key:'travel',  label:'✈️ 旅行・レジャー' },
+  { key:'car',     label:'🚗 車' },
+  { key:'house',   label:'🏠 住宅・修繕' },
+  { key:'edu',     label:'🎓 教育・習い事' },
+  { key:'medical', label:'🏥 医療・介護' },
+  { key:'income',  label:'💰 収入・臨時収入' },
+  { key:'other',   label:'📌 その他' },
+];
 const DEFAULT_SPOT_EVENTS = [
-  { name:'車買い替え',  age:50, amount:300, repeat:10 },
-  { name:'住宅修繕',    age:55, amount:200, repeat:0  },
+  { name:'車買い替え', category:'car',   type:'expense', mode:'age', value:50, amount:300, repeat:10 },
+  { name:'住宅修繕',   category:'house', type:'expense', mode:'age', value:55, amount:200, repeat:0  },
+  { name:'家族旅行',   category:'travel',type:'expense', mode:'age', value:45, amount:30,  repeat:1  },
 ];
 
-function getSpotEventsFromUI() {
-  const list = document.querySelectorAll('#spotEventList .spot-row');
+/** 旧データ形式 {name,age,amount,repeat} を新形式へ移行 */
+function migrateLifeEvent(ev) {
+  if (!ev) return null;
+  if (ev.mode) return ev; // 既に新形式
+  return {
+    name: ev.name || '',
+    category: ev.category || 'other',
+    type: ev.type || 'expense',
+    mode: 'age',
+    value: +(ev.age ?? 50),
+    amount: +(ev.amount ?? 0),
+    repeat: +(ev.repeat ?? 0),
+  };
+}
+
+function getLifeEventsFromUI() {
+  const list = document.querySelectorAll('#spotEventList .le-card');
   const arr = [];
   list.forEach(row => {
-    const inputs = row.querySelectorAll('input');
-    const name = inputs[0].value.trim();
-    const age = +inputs[1].value;
-    const amount = +inputs[2].value;
-    const repeat = +inputs[3].value;
-    if (name && age && amount) arr.push({ name, age, amount, repeat });
+    const name     = row.querySelector('.le-name').value.trim();
+    const category = row.querySelector('.le-cat').value;
+    const type     = row.querySelector('.le-type').value;
+    const mode     = row.querySelector('.le-mode').value;
+    const value    = +row.querySelector('.le-value').value;
+    const amount   = +row.querySelector('.le-amount').value;
+    const repeat   = +row.querySelector('.le-repeat').value;
+    if (name && value && amount) arr.push({ name, category, type, mode, value, amount, repeat });
   });
   return arr;
 }
 
 function syncSpotEventsJson() {
-  const arr = getSpotEventsFromUI();
+  const arr = getLifeEventsFromUI();
   document.getElementById('spotEventsJson').value = JSON.stringify(arr);
   if (typeof calculate === 'function') calculate();
   if (typeof debouncedSave === 'function' && !isApplyingCloud) debouncedSave();
 }
 
-function addSpotEventRow(ev = { name:'', age:50, amount:100, repeat:0 }) {
+function addLifeEventRow(evRaw = { name:'', category:'other', type:'expense', mode:'age', value:50, amount:100, repeat:0 }) {
+  const ev = migrateLifeEvent(evRaw);
   const list = document.getElementById('spotEventList');
-  const row = document.createElement('div');
-  row.className = 'spot-row';
-  row.style.cssText = 'display:grid;grid-template-columns:1fr 56px 70px 60px 26px;gap:5px;align-items:center;background:var(--bg-card);border:1px solid var(--border-soft);padding:5px 6px;';
-  row.innerHTML = `
-    <input type="text" placeholder="名前" value="${ev.name}" style="padding:5px 6px;font-size:11.5px;border:1px solid var(--border);background:var(--bg-subtle);">
-    <input type="number" placeholder="年齢" value="${ev.age}" min="0" max="120" style="padding:5px 6px;font-size:11.5px;border:1px solid var(--border);background:var(--bg-subtle);text-align:right;">
-    <input type="number" placeholder="万円" value="${ev.amount}" min="0" step="10" style="padding:5px 6px;font-size:11.5px;border:1px solid var(--border);background:var(--bg-subtle);text-align:right;">
-    <input type="number" placeholder="繰返" value="${ev.repeat}" min="0" max="30" style="padding:5px 6px;font-size:11.5px;border:1px solid var(--border);background:var(--bg-subtle);text-align:right;" title="0=一度きり、N=N年ごと">
-    <button type="button" class="spot-del" style="background:none;border:none;font-size:16px;color:var(--rose);cursor:pointer;padding:0;line-height:1;">×</button>
+  const card = document.createElement('div');
+  card.className = 'le-card';
+  card.style.cssText = 'background:var(--bg-card);border:1px solid var(--border-soft);border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:6px;';
+  const catOpts  = LE_CATEGORIES.map(c => `<option value="${c.key}" ${c.key===ev.category?'selected':''}>${c.label}</option>`).join('');
+  const inS = 'padding:5px 6px;font-size:11.5px;border:1px solid var(--border);background:var(--bg-subtle);';
+  card.innerHTML = `
+    <div style="display:flex;gap:5px;align-items:center;">
+      <input type="text" class="le-name" placeholder="イベント名（例: ハワイ旅行）" value="${ev.name}" style="${inS}flex:1;">
+      <button type="button" class="le-del" style="background:none;border:none;font-size:18px;color:var(--rose);cursor:pointer;padding:0 2px;line-height:1;">×</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+      <select class="le-type" style="${inS}">
+        <option value="expense" ${ev.type==='expense'?'selected':''}>支出 −</option>
+        <option value="income"  ${ev.type==='income' ?'selected':''}>収入 +</option>
+      </select>
+      <select class="le-cat" style="${inS}">${catOpts}</select>
+    </div>
+    <div style="display:grid;grid-template-columns:64px 1fr;gap:5px;align-items:center;">
+      <select class="le-mode" style="${inS}">
+        <option value="age"  ${ev.mode==='age' ?'selected':''}>年齢</option>
+        <option value="year" ${ev.mode==='year'?'selected':''}>西暦</option>
+      </select>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <input type="number" class="le-value" value="${ev.value}" min="0" max="2100" style="${inS}width:62px;text-align:right;">
+        <span class="le-unit" style="font-size:11px;color:var(--ink-mute);white-space:nowrap;">${ev.mode==='year'?'年':'歳'}</span>
+        <input type="number" class="le-amount" placeholder="万円" value="${ev.amount}" min="0" step="10" style="${inS}flex:1;text-align:right;">
+        <span style="font-size:11px;color:var(--ink-mute);">万</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--ink-mute);">
+      <span>繰り返し</span>
+      <input type="number" class="le-repeat" value="${ev.repeat}" min="0" max="30" style="${inS}width:54px;text-align:right;" title="0=一度きり、N=N年ごと">
+      <span>年ごと（0＝一度きり）</span>
+    </div>
   `;
-  list.appendChild(row);
-  row.querySelectorAll('input').forEach(inp => inp.addEventListener('input', syncSpotEventsJson));
-  row.querySelector('.spot-del').addEventListener('click', () => { row.remove(); syncSpotEventsJson(); });
+  list.appendChild(card);
+  // モード切替で単位ラベルを更新
+  const modeSel = card.querySelector('.le-mode');
+  const unitEl  = card.querySelector('.le-unit');
+  modeSel.addEventListener('change', () => { unitEl.textContent = modeSel.value==='year' ? '年' : '歳'; });
+  card.querySelectorAll('input, select').forEach(inp => {
+    inp.addEventListener('input', syncSpotEventsJson);
+    inp.addEventListener('change', syncSpotEventsJson);
+  });
+  card.querySelector('.le-del').addEventListener('click', () => { card.remove(); syncSpotEventsJson(); });
 }
 
 function renderSpotEvents() {
@@ -2107,19 +2166,14 @@ function renderSpotEvents() {
     if (!Array.isArray(arr) || arr.length === 0) arr = DEFAULT_SPOT_EVENTS;
   } catch { arr = DEFAULT_SPOT_EVENTS; }
   list.innerHTML = '';
-  arr.forEach(addSpotEventRow);
-  // ヘッダー行
-  const header = document.createElement('div');
-  header.style.cssText = 'display:grid;grid-template-columns:1fr 56px 70px 60px 26px;gap:5px;font-size:9px;color:var(--ink-mute);letter-spacing:0.05em;text-transform:uppercase;font-weight:600;padding:0 6px;margin-bottom:3px;';
-  header.innerHTML = '<span>名前</span><span style="text-align:right;">年齢</span><span style="text-align:right;">金額(万)</span><span style="text-align:right;">繰返(年)</span><span></span>';
-  list.prepend(header);
+  arr.forEach(addLifeEventRow);
   syncSpotEventsJson();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
   renderSpotEvents();
   document.getElementById('addSpotEventBtn').addEventListener('click', () => {
-    addSpotEventRow({ name:'', age:50, amount:100, repeat:0 });
+    addLifeEventRow({ name:'', category:'other', type:'expense', mode:'age', value:50, amount:100, repeat:0 });
     syncSpotEventsJson();
   });
 });
@@ -2741,16 +2795,25 @@ function readParams() {
     spouseIncomeMonthly:  +inputs.spouseIncome.value * 10000,
     spouseIncomeStartAge: +inputs.spouseIncomeStartAge.value,
     spouseIncomeEndAge:   +inputs.spouseIncomeEndAge.value,
-    /** ★NEW 計画購入（スポット支出）リスト */
+    /** ★NEW ライフイベント（支出/収入・西暦/年齢を本人年齢に正規化） */
     spotEvents: (() => {
       try {
         const arr = JSON.parse(inputs.spotEventsJson.value || '[]');
-        return arr.filter(e => e && e.age && e.amount).map(e => ({
-          name: e.name || '計画支出',
-          age: +e.age,
-          amount: +e.amount * 10000,  // 万円 → 円
-          repeat: e.repeat ? +e.repeat : 0, // 0=一度きり, N=Nごとに繰り返し
-        }));
+        return arr.map(e => {
+          // 旧形式 {age} と新形式 {mode,value} の両対応
+          let age;
+          if (e.mode === 'year')      age = startAge + ((+e.value) - (typeof BASE_YEAR!=='undefined'?BASE_YEAR:new Date().getFullYear()));
+          else if (e.mode === 'age')  age = +e.value;
+          else                        age = +e.age; // 旧形式
+          return {
+            name:     e.name || '計画支出',
+            category: e.category || 'other',
+            type:     e.type || 'expense',
+            age:      age,
+            amount:   (+e.amount || 0) * 10000,  // 万円 → 円
+            repeat:   e.repeat ? +e.repeat : 0,  // 0=一度きり, N=Nごとに繰り返し
+          };
+        }).filter(e => e.name && e.age && e.amount);
       } catch { return []; }
     })(),
   };
@@ -2874,12 +2937,15 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
     if (cAges[0] >= (params.child1IndependAge||999)) childReduceNow += params.child1Reduce * 12 * Math.pow(1+params.inflation, y);
     if (cAges[1] >= (params.child2IndependAge||999)) childReduceNow += params.child2Reduce * 12 * Math.pow(1+params.inflation, y);
 
-    /** ★NEW 計画購入（スポット支出） */
-    let spotExpenseThisYear = 0;
+    /** ★NEW ライフイベント（スポット支出・収入） */
+    let spotExpenseThisYear = 0, spotIncomeThisYear = 0;
     (params.spotEvents||[]).forEach(ev => {
-      if (ev.age === ageH) spotExpenseThisYear += ev.amount * Math.pow(1+params.inflation, y);
-      else if (ev.repeat > 0 && ageH > ev.age && (ageH - ev.age) % ev.repeat === 0)
-        spotExpenseThisYear += ev.amount * Math.pow(1+params.inflation, y);
+      const hits = (ev.age === ageH) ||
+        (ev.repeat > 0 && ageH > ev.age && (ageH - ev.age) % ev.repeat === 0);
+      if (!hits) return;
+      const amt = ev.amount * Math.pow(1+params.inflation, y);
+      if (ev.type === 'income') spotIncomeThisYear += amt;
+      else                      spotExpenseThisYear += amt;
     });
 
     const edu        = params.paths.reduce((s,p,i) => s + getEduCostForYear(cAges[i], p), 0);
@@ -2944,11 +3010,19 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
     if (isWorking) {
       const annualInvest = params.monthlyInvest * 12 + params.bonusInvest;
       const netSalary    = Math.max(params.currentSalary - taxes.total, 0);
-      rowIncome   = netSalary + dividendNetIncome;
+      rowIncome   = netSalary + dividendNetIncome + spotIncomeThisYear;
       rowInvest   = annualInvest + dividendNetIncome;
-      rowExpense  = Math.max(netSalary - annualInvest, 0); // 給与のうち積立しない分＝生活等支出
+      rowExpense  = Math.max(netSalary - annualInvest, 0) + spotExpenseThisYear; // 給与積立外＋計画支出
       indexAsset = indexAsset * (1 + indexNetReturn) + annualInvest + dividendNetIncome;
       divAsset   = divAsset * (1 + divGrowthRet);
+      /** ★NEW 現役期間の計画支出/臨時収入を資産に反映 */
+      const spotNet = spotIncomeThisYear - spotExpenseThisYear;
+      if (spotNet >= 0) { indexAsset += spotNet; }
+      else {
+        const need = -spotNet;
+        if (cash >= need) { cash -= need; }
+        else { indexAsset -= (need - cash); cash = 0; }
+      }
     } else {
       const cashReturn = params.cashReturn ?? params.bucket2Rate;
       cash       = cash * (1 + cashReturn);
@@ -2957,7 +3031,7 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
 
       const livingAdj    = Math.max(livingNow - childReduceNow, livingNow * 0.5); // 最低でも半分は残す
       const totalExpense = livingAdj + specialNow + edu + taxes.total + loanPayThisYear + spotExpenseThisYear;
-      const totalIncome  = sideNet + spouseNet + allowance + hsSupport + pensionIncome + dividendNetIncome;
+      const totalIncome  = sideNet + spouseNet + allowance + hsSupport + pensionIncome + dividendNetIncome + spotIncomeThisYear;
       const drawdown = Math.max(totalExpense - totalIncome, 0);
       rowIncome = totalIncome; rowExpense = totalExpense; rowDrawdown = drawdown;
 
@@ -3130,12 +3204,18 @@ function buildLifeEvents(params, fireYear) {
   // iDeCo一時金
   if (params.idecoCurrent > 0 || params.idecoMonthly > 0) add(60, 'iDeCo一時金');
 
-  // 計画購入（スポット支出）
+  // ライフイベント（支出/収入）
+  const catIcon = { travel:'✈️', car:'🚗', house:'🏠', edu:'🎓', medical:'🏥', income:'💰', other:'📌' };
   (params.spotEvents || []).forEach(ev => {
-    add(ev.age, `🛒 ${ev.name}(${(ev.amount/10000).toFixed(0)}万)`);
+    const icon = ev.type === 'income' ? '💰' : (catIcon[ev.category] || '🛒');
+    const sign = ev.type === 'income' ? '+' : '';
+    const man  = (ev.amount/10000).toFixed(0);
+    const label = `${icon} ${ev.name}(${sign}${man}万)`;
+    const labelRep = `${icon} ${ev.name}`;
+    add(ev.age, label);
     if (ev.repeat > 0) {
       for (let a = ev.age + ev.repeat; a <= params.lifeExpectancy; a += ev.repeat)
-        add(a, `🛒 ${ev.name}`);
+        add(a, labelRep);
     }
   });
 
@@ -3578,12 +3658,14 @@ function computeAssetTrajectory(params, fireYear) {
     if (cAges[0] >= (params.child1IndependAge||999)) childReduce3 += params.child1Reduce * 12 * Math.pow(1+params.inflation, y);
     if (cAges[1] >= (params.child2IndependAge||999)) childReduce3 += params.child2Reduce * 12 * Math.pow(1+params.inflation, y);
 
-    /** ★NEW 計画購入支出 */
-    let spotExp3 = 0;
+    /** ★NEW ライフイベント支出・収入 */
+    let spotExp3 = 0, spotInc3 = 0;
     (params.spotEvents||[]).forEach(ev => {
-      if (ev.age === ageH) spotExp3 += ev.amount * Math.pow(1+params.inflation, y);
-      else if (ev.repeat > 0 && ageH > ev.age && (ageH - ev.age) % ev.repeat === 0)
-        spotExp3 += ev.amount * Math.pow(1+params.inflation, y);
+      const hits = (ev.age === ageH) ||
+        (ev.repeat > 0 && ageH > ev.age && (ageH - ev.age) % ev.repeat === 0);
+      if (!hits) return;
+      const amt = ev.amount * Math.pow(1+params.inflation, y);
+      if (ev.type === 'income') spotInc3 += amt; else spotExp3 += amt;
     });
 
     const edu       = params.paths.reduce((s, p, i) => s + getEduCostForYear(cAges[i], p), 0);
@@ -3606,11 +3688,11 @@ function computeAssetTrajectory(params, fireYear) {
     }
     const netReturn = (isWorking ? params.returnAcc : params.returnRet) * (1 - params.taxRet);
     if (isWorking) {
-      assets = assets * (1 + netReturn) + params.monthlyInvest * 12 + params.bonusInvest;
+      assets = assets * (1 + netReturn) + params.monthlyInvest * 12 + params.bonusInvest + spotInc3 - spotExp3;
     } else {
       const livingAdj3   = Math.max(livingNow - childReduce3, livingNow * 0.5);
       const totalExpense = livingAdj3 + specialNow + edu + taxes.total + loanPayThisYear + spotExp3;
-      const totalIncome  = sideNet + spouseNet3 + allowance + hsSupport + pensionIncome;
+      const totalIncome  = sideNet + spouseNet3 + allowance + hsSupport + pensionIncome + spotInc3;
       assets = assets * (1 + netReturn) - Math.max(totalExpense - totalIncome, 0);
     }
     livingNow *= (1 + params.inflation); specialNow *= (1 + params.inflation);
@@ -3678,10 +3760,13 @@ function drawTotalAssetChart(params, fireYear) {
   (params.spotEvents||[]).forEach((ev, i) => {
     const yr = ev.age - params.startAgeOriginal;
     if (yr < 0 || yr > yearsTotal) return;
+    const isInc = ev.type === 'income';
+    const col   = isInc ? '#16a34a' : '#dc2626';
+    const sign  = isInc ? '+' : '-';
     annotations[`spot${i}`] = {
-      type:'line', xMin:yr, xMax:yr, borderColor:'#dc2626', borderWidth:1.5, borderDash:[2,3],
-      label:{ display:true, content:`${ev.name} -${(ev.amount/10000).toFixed(0)}万`, position:'start',
-        backgroundColor:'#dc2626', color:'#fff', font:{size:9}, padding:{top:2,bottom:2,left:4,right:4} }
+      type:'line', xMin:yr, xMax:yr, borderColor:col, borderWidth:1.5, borderDash:[2,3],
+      label:{ display:true, content:`${ev.name} ${sign}${(ev.amount/10000).toFixed(0)}万`, position:'start',
+        backgroundColor:col, color:'#fff', font:{size:9}, padding:{top:2,bottom:2,left:4,right:4} }
     };
   });
 
