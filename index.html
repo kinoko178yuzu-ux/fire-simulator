@@ -440,6 +440,9 @@ header {
 }
 .field { margin-bottom: 12px; }
 .field:last-child { margin-bottom: 0; }
+/* ★NEW ライフプラン年表 */
+#lifePlanTimeline table td { padding: 5px 8px; border-bottom: 1px solid var(--border-soft); }
+#lifePlanTimeline table tbody tr:hover { background: var(--teal-bg) !important; }
 .field-row {
   display: flex;
   justify-content: space-between;
@@ -1945,6 +1948,18 @@ select:focus { border-color: var(--teal); }
         <div class="chart-container"><canvas id="cashflowChart"></canvas></div>
       </div>
 
+      <!-- ★NEW ライフプラン年表 -->
+      <div class="card" id="lifePlanCard">
+        <h3><span class="dot"></span>📅 ライフプラン年表（西暦・家族・イベント・収支）</h3>
+        <div style="font-size:11.5px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
+          入力した家族構成・教育コース・FIRE年齢などから<strong>自動生成</strong>した年表です（追加入力不要）。横スクロールで全年を確認できます。<br>
+          <span style="font-size:10.5px;color:var(--ink-mute);">※ 現役期間の「支出」は手取り給与から積立を除いた生活等支出の概算。FIRE後は生活費＋税社保＋教育費等の合計。資産が前年より減る年は<span style="color:var(--rose);">赤字</span>で表示。</span>
+        </div>
+        <div id="lifePlanTimeline">
+          <div style="text-align:center;padding:24px;color:var(--ink-mute);font-size:12px;font-style:italic;">入力すると自動で年表が表示されます</div>
+        </div>
+      </div>
+
       <div class="note">
         <strong>v2 計算の前提:</strong><br>
         ・国保税: 医療分・後期支援分は全員、介護分は40〜64歳のみ課税<br>
@@ -2760,7 +2775,7 @@ function getPayoffYear(params, fireYear) {
 /** ============================
  *  単一シミュレーション（3資産+住宅ローン+バケツ+iDeCo+退職金）
  *  ============================ */
-function simulate(params, fireYear, randomReturns = false) {
+function simulate(params, fireYear, randomReturns = false, collectDetail = false) {
   let cash        = params.assetCash;
   let indexAsset  = params.assetIndex;
   let divAsset    = params.assetDividend;
@@ -2772,6 +2787,7 @@ function simulate(params, fireYear, randomReturns = false) {
   let idecoBalance = params.idecoCurrent;
 
   const trajectory = [Math.round((cash + indexAsset + divAsset) / 10000)];
+  const detail = []; // ★NEW 年次明細（ライフプラン年表用）
   const yearsTotal = params.lifeExpectancy - params.startAgeOriginal;
   const payoffYear = getPayoffYear(params, fireYear);
   const kouseiYearsAtRetire = params.kouseiYearsCurrent + fireYear;
@@ -2922,8 +2938,15 @@ function simulate(params, fireYear, randomReturns = false) {
       idecoBalance += params.idecoMonthly * 12;
     }
 
+    /** ★NEW 年表用: その年の収入・支出・積立・取り崩しを記録 */
+    let rowIncome = 0, rowExpense = 0, rowInvest = 0, rowDrawdown = 0;
+
     if (isWorking) {
       const annualInvest = params.monthlyInvest * 12 + params.bonusInvest;
+      const netSalary    = Math.max(params.currentSalary - taxes.total, 0);
+      rowIncome   = netSalary + dividendNetIncome;
+      rowInvest   = annualInvest + dividendNetIncome;
+      rowExpense  = Math.max(netSalary - annualInvest, 0); // 給与のうち積立しない分＝生活等支出
       indexAsset = indexAsset * (1 + indexNetReturn) + annualInvest + dividendNetIncome;
       divAsset   = divAsset * (1 + divGrowthRet);
     } else {
@@ -2936,6 +2959,7 @@ function simulate(params, fireYear, randomReturns = false) {
       const totalExpense = livingAdj + specialNow + edu + taxes.total + loanPayThisYear + spotExpenseThisYear;
       const totalIncome  = sideNet + spouseNet + allowance + hsSupport + pensionIncome + dividendNetIncome;
       const drawdown = Math.max(totalExpense - totalIncome, 0);
+      rowIncome = totalIncome; rowExpense = totalExpense; rowDrawdown = drawdown;
 
       const isCrash = indexReturn < -0.05;
       if (isCrash && cash > 0) {
@@ -2960,12 +2984,27 @@ function simulate(params, fireYear, randomReturns = false) {
     const totalAssets = cash + indexAsset + divAsset;
     trajectory.push(Math.round(Math.max(totalAssets, 0) / 10000));
 
+    if (collectDetail) {
+      detail.push({
+        y, ageH, ageW, cAges: cAges.slice(),
+        isWorking,
+        income:   Math.round(rowIncome   / 10000),
+        expense:  Math.round(rowExpense  / 10000),
+        invest:   Math.round(rowInvest   / 10000),
+        drawdown: Math.round(rowDrawdown / 10000),
+        edu:      Math.round(edu         / 10000),
+        loanPay:  Math.round(loanPayThisYear / 10000),
+        spot:     Math.round(spotExpenseThisYear / 10000),
+        assets:   Math.round(Math.max(totalAssets, 0) / 10000),
+      });
+    }
+
     if (totalAssets < 0 && !isWorking) {
       while (trajectory.length <= yearsTotal) trajectory.push(0);
-      return { survived: false, finalAssets: totalAssets, trajectory, fireYear };
+      return { survived: false, finalAssets: totalAssets, trajectory, fireYear, detail };
     }
   }
-  return { survived: true, finalAssets: cash + indexAsset + divAsset, trajectory, fireYear };
+  return { survived: true, finalAssets: cash + indexAsset + divAsset, trajectory, fireYear, detail };
 }
 
 function findFireYearAvg(params) {
@@ -3025,6 +3064,141 @@ function calcYearsToReachAssets(params, target) {
     assets = assets * (1 + netReturnAcc) + annualInvest;
   }
   return -1;
+}
+
+/** ============================
+ *  ★NEW ライフプラン年表（スプレッドシート由来）
+ *  ============================ */
+const BASE_YEAR = new Date().getFullYear();
+
+/** 本人年齢 → 西暦 */
+function ageToYear(params, ageH) {
+  return BASE_YEAR + (ageH - params.startAgeOriginal);
+}
+
+/**
+ * 既存の入力だけからライフイベントを自動生成する。
+ * 返り値: { 本人年齢: ["イベント1","イベント2"] }
+ */
+function buildLifeEvents(params, fireYear) {
+  const map = {};
+  const add = (ageH, label) => {
+    if (ageH == null || isNaN(ageH)) return;
+    (map[ageH] = map[ageH] || []).push(label);
+  };
+  const sa = params.startAgeOriginal;
+
+  // 子供の進学マイルストーン（現在の子の年齢から逆算）
+  const childMilestones = [
+    [6,  '小学校入学'], [12, '中学校入学'], [15, '高校入学'],
+    [18, '大学入学'],   [22, '大学卒業'],
+  ];
+  params.childAgesOriginal.forEach((cAge, i) => {
+    const label = i === 0 ? '子1' : '子2';
+    childMilestones.forEach(([mAge, mLabel]) => {
+      const ageH = sa + (mAge - cAge);
+      if (ageH >= sa) add(ageH, `${label} ${mLabel}`);
+    });
+    // 独立
+    const indep = i === 0 ? params.child1IndependAge : params.child2IndependAge;
+    if (indep) { const ageH = sa + (indep - cAge); if (ageH >= sa) add(ageH, `${label} 独立`); }
+  });
+
+  // FIRE達成
+  if (fireYear >= 0) add(sa + fireYear, '🔥 FIRE達成');
+
+  // 住宅ローン完済
+  if (params.loanBalance > 0) {
+    const payoffYear = getPayoffYear(params, fireYear);
+    if (payoffYear && payoffYear > 0) add(sa + payoffYear, '🏠 ローン完済');
+  }
+
+  // 年金受給開始
+  if (params.pensionStartAge) add(params.pensionStartAge, '💰 年金受給開始');
+
+  // 副業終了
+  if (params.sideIncomeEndAge && params.sideIncomeGross > 0)
+    add(params.sideIncomeEndAge, '副業終了');
+
+  // 配偶者パート（妻年齢 → 本人年齢に変換）
+  if (params.spouseIncomeMonthly > 0) {
+    const wd = sa - params.ageWifeOriginal; // 本人年齢 = 妻年齢 + wd
+    add(params.spouseIncomeStartAge + wd, '配偶者パート開始');
+    add(params.spouseIncomeEndAge   + wd, '配偶者パート終了');
+  }
+
+  // iDeCo一時金
+  if (params.idecoCurrent > 0 || params.idecoMonthly > 0) add(60, 'iDeCo一時金');
+
+  // 計画購入（スポット支出）
+  (params.spotEvents || []).forEach(ev => {
+    add(ev.age, `🛒 ${ev.name}(${(ev.amount/10000).toFixed(0)}万)`);
+    if (ev.repeat > 0) {
+      for (let a = ev.age + ev.repeat; a <= params.lifeExpectancy; a += ev.repeat)
+        add(a, `🛒 ${ev.name}`);
+    }
+  });
+
+  return map;
+}
+
+/** ライフプラン年表を描画 */
+function renderLifePlanTimeline(params, fireYear) {
+  const host = document.getElementById('lifePlanTimeline');
+  if (!host) return;
+  const fy = Math.max(fireYear, 0);
+  const res = simulate(params, fy, false, true);
+  const events = buildLifeEvents(params, fy);
+  const hasChild2 = params.childAgesOriginal.length > 1 && params.childAgesOriginal[1] >= 0;
+
+  let rows = '';
+  res.detail.forEach(d => {
+    const seireki = ageToYear(params, d.ageH);
+    const evList  = events[d.ageH] || [];
+    const isFire  = d.ageH === params.startAgeOriginal + fy;
+    const phase   = d.isWorking
+      ? '<span style="color:var(--teal);font-weight:600;">現役</span>'
+      : '<span style="color:var(--amber);font-weight:600;">FIRE</span>';
+    const evHtml = evList.length
+      ? evList.map(e => `<span style="display:inline-block;background:var(--teal-bg);color:var(--teal-deep);font-size:10px;padding:1px 6px;border-radius:3px;margin:1px 2px 1px 0;white-space:nowrap;">${e}</span>`).join('')
+      : '<span style="color:var(--ink-mute);">—</span>';
+    const c2 = hasChild2 ? `<td style="text-align:center;">${d.cAges[1]}</td>` : '';
+    // 資産が前年より減る年は赤系で強調
+    const assetColor = (!d.isWorking && d.drawdown > 0) ? 'color:var(--rose);' : 'color:var(--teal-deep);';
+    const rowBg = isFire ? 'background:rgba(217,164,65,0.10);' : (evList.length ? 'background:var(--bg-subtle);' : '');
+    rows += `<tr style="${rowBg}">
+      <td style="font-weight:600;white-space:nowrap;">${seireki}</td>
+      <td style="text-align:center;font-weight:600;">${d.ageH}</td>
+      <td style="text-align:center;color:var(--ink-mute);">${d.ageW}</td>
+      <td style="text-align:center;">${d.cAges[0]}</td>${c2}
+      <td style="text-align:center;">${phase}</td>
+      <td>${evHtml}</td>
+      <td style="text-align:right;white-space:nowrap;">${d.income.toLocaleString()}</td>
+      <td style="text-align:right;white-space:nowrap;">${d.expense.toLocaleString()}</td>
+      <td class="mono" style="text-align:right;white-space:nowrap;font-weight:700;${assetColor}">${d.assets.toLocaleString()}</td>
+    </tr>`;
+  });
+
+  const c2head = hasChild2 ? '<th style="text-align:center;">子2</th>' : '';
+  host.innerHTML = `
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:6px;">
+      <table style="width:100%;border-collapse:collapse;font-size:11.5px;min-width:640px;">
+        <thead>
+          <tr style="background:var(--ink);color:#fff;position:sticky;top:0;">
+            <th style="padding:6px 8px;text-align:left;">西暦</th>
+            <th style="padding:6px 4px;text-align:center;">本人</th>
+            <th style="padding:6px 4px;text-align:center;">妻</th>
+            <th style="padding:6px 4px;text-align:center;">子1</th>${c2head}
+            <th style="padding:6px 4px;text-align:center;">区分</th>
+            <th style="padding:6px 8px;text-align:left;">主なライフイベント</th>
+            <th style="padding:6px 8px;text-align:right;">収入<br><small style="font-weight:400;opacity:.7;">万/年</small></th>
+            <th style="padding:6px 8px;text-align:right;">支出<br><small style="font-weight:400;opacity:.7;">万/年</small></th>
+            <th style="padding:6px 8px;text-align:right;">予測資産<br><small style="font-weight:400;opacity:.7;">万円</small></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
 }
 
 /** ============================
@@ -3292,6 +3466,7 @@ function calculate() {
   drawCashflowChart(params, fireYear);
   drawTotalAssetChart(params, fireYear);
   updateBucketDisplay(params, fireYear);
+  renderLifePlanTimeline(params, fireYear);
 }
 
 /** ============================
