@@ -3041,6 +3041,14 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
   let cash        = params.assetCash;
   let indexAsset  = params.assetIndex;
   let divAsset    = params.assetDividend;
+  /** ★FIX startAssets が指定され、3バケツ合計と異なる場合は比率を保って按分スケール。
+   *  これにより findSafeAssets の二分探索（startAssetsを変える）が正しく効く。
+   *  通常（readParams）は startAssets==バケツ合計 なので k=1 で無変化。 */
+  if (params.startAssets != null) {
+    const _sum = cash + indexAsset + divAsset;
+    if (_sum > 0) { const k = params.startAssets / _sum; cash *= k; indexAsset *= k; divAsset *= k; }
+    else { indexAsset = params.startAssets; }
+  }
   let loanBal     = params.loanBalance;
   let livingNow   = params.monthlyLifeExHouse * 12;
   let specialNow  = params.annualSpecial;
@@ -3065,6 +3073,7 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
   /** 退職金: FIRE時に加算 (fireYear==0でも加算) */
   let taishokinAdded = false;
   let bucketInitialized = false; // FIRE時バケツ配分フラグ
+  let fireSnap = null;           // ★FIX FIRE時点の資産スナップショット
 
   const divTaxRate = (1 - params.divNisaRatio) * 0.20315;
 
@@ -3095,6 +3104,8 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
       }
       indexAsset = Math.max(indexAsset, 0);
       bucketInitialized = true;
+      // ★FIX FIRE時点スナップショット（退職金・バケツ配分後、取り崩し前）
+      if (!fireSnap) fireSnap = { cash, index: indexAsset, div: divAsset, loanBalance: loanBal };
     }
 
     /** iDeCo: 60歳で一時金として加算（退職所得控除適用後、簡易計算） */
@@ -3268,16 +3279,17 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
         edu:      Math.round(edu         / 10000),
         loanPay:  Math.round(loanPayThisYear / 10000),
         spot:     Math.round(spotExpenseThisYear / 10000),
+        loanBal:  Math.round(Math.max(loanBal, 0) / 10000),
         assets:   Math.round(Math.max(totalAssets, 0) / 10000),
       });
     }
 
     if (totalAssets < 0 && !isWorking) {
       while (trajectory.length <= yearsTotal) trajectory.push(0);
-      return { survived: false, finalAssets: totalAssets, trajectory, fireYear, detail };
+      return { survived: false, finalAssets: totalAssets, trajectory, fireYear, detail, fireSnap };
     }
   }
-  return { survived: true, finalAssets: cash + indexAsset + divAsset, trajectory, fireYear, detail };
+  return { survived: true, finalAssets: cash + indexAsset + divAsset, trajectory, fireYear, detail, fireSnap };
 }
 
 function findFireYearAvg(params) {
@@ -3632,14 +3644,8 @@ function calculate() {
     }
   }
 
-  /** FIRE達成時の資産予測 */
-  const annualInvest = params.monthlyInvest * 12 + params.bonusInvest;
-  const netReturnAcc = params.returnAcc * (1 - params.taxRet);
-  let projAssets = params.currentAssets;
-  for (let y = 0; y < Math.max(fireYear, 0); y++) {
-    projAssets = projAssets * (1 + netReturnAcc) + annualInvest;
-  }
-  projAssets += params.taishokin; // 退職金加算
+  /** FIRE達成時の資産予測（★FIX simulate本体から取得＝年表・モンテカルロと完全一致） */
+  const projAssets = fireYear >= 0 ? buildFireParams(params, fireYear).startAssets : 0;
   document.getElementById('targetAssets').textContent = fireYear >= 0 ? `${(projAssets/10000).toFixed(0)}万` : '--';
 
   /** FIRE直後の税金内訳 */
@@ -3877,97 +3883,19 @@ function drawCashflowChart(params, fireYear) {
  *  総資産推移グラフ（決定論的）
  *  ============================ */
 /** シナリオ1本分の資産推移を計算して返す */
+/** ★FIX simulate本体を唯一の計算エンジンとして利用（年表・モンテカルロ・総資産推移を完全一致させる） */
 function computeAssetTrajectory(params, fireYear) {
-  const assetsArr = [], loanArr = [], events = [];
-  let assets = params.currentAssets;
-  let livingNow = params.monthlyLifeExHouse * 12, specialNow = params.annualSpecial;
-  let loanBal = params.loanBalance;
+  const fy = Math.max(fireYear, 0);
+  const res = simulate(params, fy, false, true);
   const yearsTotal = params.lifeExpectancy - params.startAgeOriginal;
-  const payoffYear = getPayoffYear(params, Math.max(fireYear, 0));
-  const kouseiYearsAtRetire = params.kouseiYearsCurrent + Math.max(fireYear, 0);
-  const kouseiPensionAnnual = calcKouseiPensionAnnual(kouseiYearsAtRetire, params.kouseiAvgMonthly);
-  const kokuminReceive = nenkinReceiveRate(params.taxParams.nenkinExempt);
-  const pMul = pensionMultiplier(params.pensionStartAge);
-  const pensionStartAge = params.pensionStartAge;
-  let taishokinAdded = false;
-
-  assetsArr.push(Math.round(assets / 10000));
-  loanArr.push(Math.round(loanBal / 10000));
-
-  for (let y = 0; y < yearsTotal; y++) {
-    const ageH = params.startAgeOriginal + y;
-    const ageW = params.ageWifeOriginal  + y;
-    const cAges = params.childAgesOriginal.map(a => a + y);
-    const isWorking = (fireYear >= 0) ? (y < fireYear) : true;
-    if (!isWorking && !taishokinAdded) { assets += params.taishokin; taishokinAdded = true; }
-
-    let loanPayThisYear = 0;
-    if (loanBal > 0) {
-      loanPayThisYear = params.loanMonthly * 12 + params.loanBonus;
-      loanBal = loanBalanceAfter(loanBal, params.loanMonthly, params.loanBonus, params.loanRate, 1);
-      if (payoffYear === y + 1 && loanBal > 0) {
-        assets -= loanBal;
-        events.push({ year: y + 1, age: ageH + 1, type: 'payoff', amount: loanBal });
-        loanBal = 0;
-      }
-    }
-    const loanCredit = (loanBal > 0 && y < params.taxCreditYears) ? params.taxCreditAmount : 0;
-    const sideActive3 = !isWorking && (params.sideIncomeEndAge === 0 || ageH <= params.sideIncomeEndAge);
-    const sideNet   = sideActive3 ? params.sideIncomeNet * Math.pow(1 + params.inflation, y) : 0;
-
-    /** ★NEW 配偶者パート収入 */
-    const spouseActive3 = !isWorking && (params.spouseIncomeMonthly||0) > 0
-                       && ageW >= (params.spouseIncomeStartAge||0)
-                       && ageW <= (params.spouseIncomeEndAge||999);
-    const spouseNet3 = spouseActive3 ? params.spouseIncomeMonthly * 12 * Math.pow(1+params.inflation, y) : 0;
-
-    /** ★NEW 子供独立による生活費削減 */
-    let childReduce3 = 0;
-    if (cAges[0] >= (params.child1IndependAge||999)) childReduce3 += params.child1Reduce * 12 * Math.pow(1+params.inflation, y);
-    if (cAges[1] >= (params.child2IndependAge||999)) childReduce3 += params.child2Reduce * 12 * Math.pow(1+params.inflation, y);
-
-    /** ★NEW ライフイベント支出・収入 */
-    let spotExp3 = 0, spotInc3 = 0;
-    (params.spotEvents||[]).forEach(ev => {
-      const hits = (ev.age === ageH) ||
-        (ev.repeat > 0 && ageH > ev.age && (ageH - ev.age) % ev.repeat === 0);
-      if (!hits) return;
-      const amt = ev.amount * Math.pow(1+params.inflation, y);
-      if (ev.type === 'income') spotInc3 += amt; else spotExp3 += amt;
-    });
-
-    const edu       = params.paths.reduce((s, p, i) => s + getEduCostForYear(cAges[i], p), 0);
-    const allowance = calcChildAllowance(cAges);
-    const hsSupport = isWorking ? 0 : calcHighSchoolSupport(cAges, sideNet);
-    let taxes;
-    if (isWorking) {
-      const ss = params.currentSalary * 0.15;
-      const ti = Math.max(salaryToIncome(params.currentSalary) - ss - 480000 - 380000, 0);
-      let inc = calcIncomeTax(ti) * 1.021, res = ti * 0.10 + 5000;
-      if (loanCredit > 0) { const ir = Math.min(inc, loanCredit); inc -= ir; res -= Math.min(res, loanCredit - ir, Math.min(ti * 0.05, 97500)); }
-      taxes = { total: Math.round(ss + Math.max(inc, 0) + Math.max(res, 0)) };
-    } else {
-      taxes = calcTaxesAndInsurance(sideNet, ageH, ageW, cAges, params.taxParams, loanCredit, y - fireYear);
-    }
-    let pensionIncome = 0;
-    if (ageH >= pensionStartAge) {
-      pensionIncome = (kouseiPensionAnnual + 816000 * (kokuminReceive + 1)) * pMul * Math.pow(1 + params.inflation * 0.5, y);
-      if (ageH === pensionStartAge) events.push({ year: y, age: pensionStartAge, type: 'pension' });
-    }
-    const netReturn = (isWorking ? params.returnAcc : params.returnRet) * (1 - params.taxRet);
-    if (isWorking) {
-      assets = assets * (1 + netReturn) + params.monthlyInvest * 12 + params.bonusInvest + spotInc3 - spotExp3;
-    } else {
-      const livingAdj3   = Math.max(livingNow - childReduce3, livingNow * 0.5);
-      const totalExpense = livingAdj3 + specialNow + edu + taxes.total + loanPayThisYear + spotExp3;
-      const totalIncome  = sideNet + spouseNet3 + allowance + hsSupport + pensionIncome + spotInc3;
-      assets = assets * (1 + netReturn) - Math.max(totalExpense - totalIncome, 0);
-    }
-    livingNow *= (1 + params.inflation); specialNow *= (1 + params.inflation);
-    if (fireYear > 0 && y + 1 === fireYear) events.push({ year: y + 1, age: ageH + 1, type: 'fire' });
-    assetsArr.push(Math.round(Math.max(assets, 0) / 10000));
-    loanArr.push(Math.round(loanBal / 10000));
-  }
+  const assetsArr = res.trajectory.slice();
+  const loanArr = [Math.round(Math.max(params.loanBalance, 0) / 10000)];
+  const events = [];
+  res.detail.forEach(d => {
+    loanArr.push(d.loanBal);
+    if (fy > 0 && d.y === fy) events.push({ year: d.y, age: d.ageH, type: 'fire' });
+    if (params.pensionStartAge && d.ageH === params.pensionStartAge) events.push({ year: d.y, age: d.ageH, type: 'pension' });
+  });
   return { assetsArr, loanArr, events, yearsTotal };
 }
 
@@ -4225,6 +4153,34 @@ function updateBucketDisplay(params, fireYear) {
 /** ============================
  *  シミュレーション実行
  *  ============================ */
+/** ★FIX 統一: FIRE時点のパラメータを構築（資産・年齢・ローン・年金すべてを進める）
+ *  これ1つを全モンテカルロ経路で使い、経路間の矛盾を解消する。
+ *  返す startAssets/assetバケツ は「FIRE時点の総資産（退職金込み）」。simulate(fp, 0) で使う。 */
+function buildFireParams(params, fireYear) {
+  const fy = Math.max(fireYear, 0);
+  /** ★FIX FIRE時点の資産は simulate本体から取得（年表と完全一致。
+   *  現役期間のローン一括返済・計画支出・配当再投資などを漏れなく反映） */
+  const snap = simulate(params, fy, false, false).fireSnap
+    || { cash: params.assetCash, index: params.assetIndex, div: params.assetDividend,
+         loanBalance: Math.max(loanBalanceAfter(params.loanBalance, params.loanMonthly, params.loanBonus, params.loanRate, fy), 0) };
+  const total = snap.cash + snap.index + snap.div;
+  return {
+    ...params,
+    assetCash: snap.cash, assetIndex: snap.index, assetDividend: snap.div,
+    startAssets: total, currentAssets: total,
+    taishokin: 0, // FIRE時受取分はsnapに反映済み → 二重加算防止
+    startAge:          params.startAgeOriginal + fy,
+    startAgeOriginal:  params.startAgeOriginal + fy,
+    ageWife:           params.ageWifeOriginal + fy,
+    ageWifeOriginal:   params.ageWifeOriginal + fy,
+    childAgesAt:       params.childAgesOriginal.map(a => a + fy),
+    childAgesOriginal: params.childAgesOriginal.map(a => a + fy),
+    kouseiYearsCurrent: Math.min(params.kouseiYearsCurrent + fy, 40),
+    loanBalance:       snap.loanBalance,
+    taxCreditYears:    Math.max(params.taxCreditYears - fy, 0),
+  };
+}
+
 async function runSimulation() {
   const btn = document.getElementById('runSimBtn');
   btn.disabled = true; btn.innerHTML = '<span class="computing"></span>計算中...';
@@ -4240,34 +4196,10 @@ async function runSimulation() {
     showToast('FIRE達成不可。条件見直し'); return;
   }
 
-  let projAssets = params.currentAssets;
-  const annualInvest = params.monthlyInvest * 12 + params.bonusInvest;
-  const netReturnAcc = params.returnAcc * (1 - params.taxRet);
-  for (let y = 0; y < fireYear; y++) projAssets = projAssets*(1+netReturnAcc) + annualInvest;
-  projAssets += params.taishokin;
-
-  /** ★ fireParamsはFIRE時点の年齢・家族状況に進めてから構築
-   *  （これをしないと「39歳が即リタイア」として子供の教育費・ローンが全部退職後に計上される） */
-  const fireAge = params.startAgeOriginal + fireYear;
-  const kouseiYearsAtFire = params.kouseiYearsCurrent + fireYear;
-  const loanPayoffYear    = getPayoffYear(params, fireYear);  // 繰上返済年もFIRE基準に調整
-  const fireParams = {
-    ...params,
-    startAssets:        projAssets,
-    currentAssets:      projAssets,
-    startAge:           fireAge,
-    startAgeOriginal:   fireAge,                                 // ← 核心の修正
-    ageWife:            params.ageWifeOriginal  + fireYear,
-    ageWifeOriginal:    params.ageWifeOriginal  + fireYear,
-    childAgesAt:        params.childAgesOriginal.map(a => a + fireYear),
-    childAgesOriginal:  params.childAgesOriginal.map(a => a + fireYear),
-    kouseiYearsCurrent: kouseiYearsAtFire,
-    // ローン残高をFIRE時点の値に更新
-    loanBalance:        Math.max(loanBalanceAfter(
-                          params.loanBalance, params.loanMonthly,
-                          params.loanBonus, params.loanRate, fireYear), 0),
-    taxCreditYears:     Math.max(params.taxCreditYears - fireYear, 0),
-  };
+  /** ★FIX 統一ビルダーでFIRE時点パラメータを構築（資産も年齢もローンも進める） */
+  const fireParams = buildFireParams(params, fireYear);
+  const fireAge    = params.startAgeOriginal + fireYear;
+  const projAssets = fireParams.startAssets; // FIRE時の予測総資産（退職金込み）
   const baseResult = runMonteCarlo(fireParams, 0, trials);
   const scenarioNames = { '1':'① 早期FIRE', '2':'② 標準FIRE', '3':'③ 余裕FIRE' };
   const scenarioLabel = params.fireMode === 'target'
@@ -4309,16 +4241,9 @@ async function buildThreeScenarios(params, trials) {
     const fireYear = getFireYearForScenario(params, n);
     const targetAge = [params.fireAge1, params.fireAge2, params.fireAge3][n-1];
 
-    // FIRE時の資産予測
-    const annualInvest = params.monthlyInvest * 12 + params.bonusInvest;
-    const netReturnAcc = params.returnAcc * (1 - params.taxRet);
-    let cash = params.assetCash, indexA = params.assetIndex, divA = params.assetDividend;
-    for (let y = 0; y < fireYear; y++) {
-      const div = divA * params.divYield * (1 - (1-params.divNisaRatio)*0.20315);
-      indexA = indexA*(1+netReturnAcc) + annualInvest + div;
-      divA   = divA  *(1+params.divGrowth);
-    }
-    const projAssets = cash + indexA + divA + params.taishokin;
+    // ★FIX 統一ビルダーでFIRE時点パラメータ（資産・年齢・ローン・年金すべて進める）
+    const fp = buildFireParams(params, fireYear);
+    const projAssets = fp.startAssets;
 
     // FIRE直後の税・社保計算（退職年齢時点の実年齢で計算）
     const ageAtFire = params.startAgeOriginal + fireYear;
@@ -4336,7 +4261,6 @@ async function buildThreeScenarios(params, trials) {
     const totalPensionMonthly = (kouseiAnnual + 816000*(kokuminReceive+1)) * pMul / 12;
 
     // モンテカルロ
-    const fp = { ...params, assetCash:cash, assetIndex:indexA, assetDividend:divA, startAssets:projAssets, currentAssets:projAssets };
     const mc = runMonteCarlo(fp, 0, Math.min(trials, 500));
 
     scenarios.push({
@@ -4424,14 +4348,9 @@ async function buildAgeComparison(params, trials) {
   const netReturnAcc = params.returnAcc * (1 - params.taxRet);
   for (const offset of offsets) {
     if (startAge + offset > 65) break;
-    let cash = params.assetCash, indexA = params.assetIndex, divA = params.assetDividend;
-    for (let y = 0; y < offset; y++) {
-      const dividend = divA * params.divYield * (1-(1-params.divNisaRatio)*0.20315);
-      indexA = indexA*(1+netReturnAcc) + annualInvest + dividend;
-      divA   = divA  *(1+params.divGrowth);
-    }
-    const projAssets = cash + indexA + divA + params.taishokin;
-    const fp = { ...params, assetCash:cash, assetIndex:indexA, assetDividend:divA, startAssets:projAssets, currentAssets:projAssets };
+    // ★FIX 統一ビルダー（資産・年齢・ローン・年金すべて進める）
+    const fp = buildFireParams(params, offset);
+    const projAssets = fp.startAssets;
     const mc = runMonteCarlo(fp, 0, Math.min(trials, 500));
     const kouseiYears = params.kouseiYearsCurrent + offset;
     const kouseiAnnual = calcKouseiPensionAnnual(kouseiYears, params.kouseiAvgMonthly);
