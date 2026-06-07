@@ -2192,12 +2192,16 @@ function renderBudgetSheet() {
     </table>
   </div>
   <input type="file" id="bgCsvInput" accept=".csv,text/csv" style="display:none;">
-  <div id="bgSummary" style="margin-top:10px;font-size:12px;"></div>`;
+  <div id="bgSummary" style="margin-top:10px;font-size:12px;"></div>
+  <div id="bgPieWrap" style="display:none;margin-top:14px;">
+    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:8px;">支出の内訳（月平均）</div>
+    <div style="max-width:420px;margin:0 auto;"><canvas id="budgetPieChart" height="240"></canvas></div>
+  </div>`;
 
   // 入力リスナー（input=即時に合計＆生活費反映、change=フル再計算）
   host.querySelectorAll('.bg-cell').forEach(inp => {
     inp.addEventListener('input', () => { writeBudgetFromInputs(); updateBudgetTotals(); });
-    inp.addEventListener('change', () => { writeBudgetFromInputs(); updateBudgetTotals(); calculate(); if (typeof debouncedSave==='function') debouncedSave(); });
+    inp.addEventListener('change', () => { writeBudgetFromInputs(); updateBudgetTotals(); drawBudgetPie(); calculate(); if (typeof debouncedSave==='function') debouncedSave(); });
   });
   // 月別MF取込
   let bgImportMonth = null;
@@ -2223,6 +2227,44 @@ function renderBudgetSheet() {
     reader.readAsArrayBuffer(file);
   });
   updateBudgetTotals();
+  drawBudgetPie();
+}
+
+/** ★NEW 支出の円グラフ（月平均・費目別） */
+let budgetPieChart = null;
+function drawBudgetPie() {
+  const wrap = document.getElementById('bgPieWrap');
+  const canvas = document.getElementById('budgetPieChart');
+  if (!wrap || !canvas || typeof Chart === 'undefined') return;
+  const b = getBudget();
+  const months = Math.max(budgetActiveMonths(b), 1);
+  const items = BUDGET_ALL_EXP
+    .map(r => ({ label: r.label, val: budgetRowTotal(b, r.key) / months }))
+    .filter(x => x.val > 0)
+    .sort((a, c) => c.val - a.val);
+  if (!items.length) { wrap.style.display = 'none'; if (budgetPieChart) { budgetPieChart.destroy(); budgetPieChart = null; } return; }
+  wrap.style.display = 'block';
+  const COLORS = ['#0d6e6e','#d97706','#16a34a','#b8413d','#8a5cf6','#0891b2','#ca8a04','#db2777','#65a30d','#9a8c70','#64748b','#e07a5f','#3d8361','#7c3aed'];
+  const data = {
+    labels: items.map(x => x.label),
+    datasets: [{ data: items.map(x => +x.val.toFixed(1)), backgroundColor: items.map((_,i)=>COLORS[i%COLORS.length]), borderColor:'#fff', borderWidth:1.5 }]
+  };
+  if (budgetPieChart) { budgetPieChart.data = data; budgetPieChart.update(); return; }
+  budgetPieChart = new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    data,
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { font: { size: 10 }, boxWidth: 12, padding: 6 } },
+        tooltip: { callbacks: { label: c => {
+          const total = c.dataset.data.reduce((s,v)=>s+v,0);
+          const pct = total ? (c.parsed/total*100).toFixed(1) : 0;
+          return `${c.label}: ${c.parsed.toLocaleString()}万 (${pct}%)`;
+        } } }
+      }
+    }
+  });
 }
 
 /** 画面の入力値を budgetSheetJson に書き戻す */
@@ -2271,8 +2313,18 @@ function updateBudgetTotals() {
   if (budgetHasData()) {
     const v = Math.round(livingAvg*10)/10;
     if (mEl) { mEl.value = v; mEl.readOnly = true; mEl.style.background = 'var(--bg-subtle)'; }
+    // ★NEW 貯蓄率チェック（支出 ÷ 給与手取り。賞与・その他収入を除く＝スプレッドシート準拠）
+    const salaryAvg = budgetRowTotal(b, 'salary') / months;
+    let ratioHtml = '';
+    if (salaryAvg > 0) {
+      const ratio = expAvg / salaryAvg * 100;
+      const saveRate = Math.max(100 - ratio, 0);
+      const col = ratio <= 80 ? 'var(--green)' : (ratio <= 100 ? 'var(--amber)' : 'var(--rose)');
+      const verdict = ratio <= 80 ? '✓ 健全（8割以内）' : (ratio <= 100 ? '⚠ やや多い' : '✗ 給与超過');
+      ratioHtml = `<br>支出 ÷ 給与手取り = <b style="color:${col};">${ratio.toFixed(0)}%</b> <span style="color:${col};font-size:11px;">${verdict}</span> <span style="color:var(--ink-mute);font-size:10.5px;">（給与ベース貯蓄率 約${saveRate.toFixed(0)}%。目標は支出を給与の8割以内）</span>`;
+    }
     if (summary) summary.innerHTML = `<div style="background:var(--teal-bg);border-left:3px solid var(--teal);padding:8px 12px;line-height:1.7;">
-      <strong>${months}ヶ月入力</strong> ／ 月平均：収入 <b>${incAvg.toFixed(1)}万</b>・支出 <b>${expAvg.toFixed(1)}万</b>・<span style="color:${incAvg-expAvg<0?'var(--rose)':'var(--teal-deep)'};">収支 ${(incAvg-expAvg).toFixed(1)}万</span>（年換算 ${((incAvg-expAvg)*12).toFixed(0)}万）<br>
+      <strong>${months}ヶ月入力</strong> ／ 月平均：収入 <b>${incAvg.toFixed(1)}万</b>・支出 <b>${expAvg.toFixed(1)}万</b>・<span style="color:${incAvg-expAvg<0?'var(--rose)':'var(--teal-deep)'};">収支 ${(incAvg-expAvg).toFixed(1)}万</span>（年換算 ${((incAvg-expAvg)*12).toFixed(0)}万）${ratioHtml}<br>
       → <strong>FIRE後の生活費に ${v}万/月 を反映</strong>（生活費系のみ。住宅ローン・教育・税社保は除外）</div>`;
   } else {
     if (mEl) { mEl.readOnly = false; mEl.style.background = ''; }
