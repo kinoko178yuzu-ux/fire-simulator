@@ -1802,6 +1802,22 @@ select:focus { border-color: var(--teal); }
           スプレッドシートの実績管理と同じく、各月の収入・支出を入力すると<strong>年間収支（黒字・赤字）</strong>を自動計算します。<br>
           <span style="font-size:10.5px;color:var(--ink-mute);">月見出しの 📥 でその月のマネーフォワードCSVを取り込めます。<strong>生活費系支出の月平均</strong>が「FIRE後の生活費」に自動反映されます（住宅ローン・教育・税社保はFIRE診断が別計算するため除外）。</span>
         </div>
+        <!-- ★NEW MF一括自動取込（Tampermonkeyブリッジ） -->
+        <div id="mfAutoBox" style="background:var(--teal-bg);border:1px solid var(--teal);border-radius:6px;padding:10px 12px;margin-bottom:12px;">
+          <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+            <span style="font-size:12px;font-weight:700;color:var(--teal-deep);">🔗 マネーフォワードから一括取込</span>
+            <input type="month" id="mfFromMonth" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);font-family:inherit;">
+            <span style="font-size:12px;color:var(--ink-mute);">〜</span>
+            <input type="month" id="mfToMonth" style="padding:5px 6px;font-size:12px;border:1px solid var(--border);font-family:inherit;">
+            <button type="button" id="mfAutoBtn" style="padding:7px 14px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">▶ 取込開始</button>
+            <span id="mfBridgeStatus" style="font-size:11px;color:var(--ink-mute);">🔌 連携スクリプト未検出</span>
+          </div>
+          <div id="mfAutoResult" style="font-size:11.5px;margin-top:6px;"></div>
+          <div style="font-size:10.5px;color:var(--ink-mute);margin-top:4px;line-height:1.6;">
+            ボタンを押すとMFのタブが自動で開き、指定期間の各月CSVを取得してこのシートへ自動反映します（MFにログイン済みであること）。
+            初回のみ <a href="mf_fire_bridge.user.js" style="color:var(--teal-deep);font-weight:600;">連携ユーザースクリプトをインストール</a>（Tampermonkey）してください。
+          </div>
+        </div>
         <div id="budgetSheet"></div>
       </div>
 
@@ -2368,6 +2384,77 @@ function importMFCsvToMonth(text, monthIdx) {
 }
 
 document.addEventListener('DOMContentLoaded', () => { renderBudgetSheet(); });
+
+/** ====================================
+ *  ★NEW MF一括自動取込ブリッジ（Tampermonkeyユーザースクリプトと連携）
+ *  アプリ → 'mf-export-request' {months:['2026-04',...]} を発火
+ *  スクリプト → MFタブで各月CSVを取得し 'mf-export-result' {items:[{ym,b64}],errors} を返す
+ *  ==================================== */
+(function setupMFBridge(){
+  let bridgeReady = false;
+  document.addEventListener('mf-bridge-ready', () => {
+    bridgeReady = true;
+    const s = document.getElementById('mfBridgeStatus');
+    if (s) { s.textContent = '🟢 連携スクリプト検出'; s.style.color = 'var(--green)'; }
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    // スクリプト側が先に announce 済みの場合に備えて ping
+    setTimeout(() => document.dispatchEvent(new CustomEvent('mf-bridge-ping')), 400);
+    // 期間の初期値 = 先月
+    const prev = new Date(); prev.setMonth(prev.getMonth() - 1);
+    const ymStr = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+    const f = document.getElementById('mfFromMonth'), t = document.getElementById('mfToMonth');
+    if (f && !f.value) f.value = ymStr;
+    if (t && !t.value) t.value = ymStr;
+
+    const btn = document.getElementById('mfAutoBtn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      const res = document.getElementById('mfAutoResult');
+      if (!bridgeReady) {
+        if (res) res.innerHTML = '<span style="color:var(--rose);">連携スクリプトが見つかりません。上のリンクからインストール後、このページを再読み込みしてください。</span>';
+        return;
+      }
+      if (!f.value || !t.value) return;
+      let [fy, fm] = f.value.split('-').map(Number);
+      let [ty, tm] = t.value.split('-').map(Number);
+      let cur = fy * 12 + (fm - 1), end = ty * 12 + (tm - 1);
+      if (end < cur) [cur, end] = [end, cur];
+      if (end - cur > 11) { if (res) res.innerHTML = '<span style="color:var(--rose);">期間は12ヶ月以内で指定してください</span>'; return; }
+      const months = [];
+      for (let v = cur; v <= end; v++) months.push(`${Math.floor(v/12)}-${String(v%12+1).padStart(2,'0')}`);
+      if (res) res.innerHTML = '<span style="color:var(--ink-mute);">⏳ MFのタブを開いて取得中… 完了するとここに自動反映されます（MFタブは閉じてOKと表示されたら閉じてください）</span>';
+      document.dispatchEvent(new CustomEvent('mf-export-request', { detail: { months } }));
+    });
+  });
+
+  document.addEventListener('mf-export-result', (e) => {
+    const d = e.detail || {};
+    const items = d.items || [];
+    let ok = 0; const okList = [];
+    items.forEach(it => {
+      try {
+        const bin = atob(it.b64);
+        const u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        let text;
+        try { text = new TextDecoder('shift-jis').decode(u); } catch { text = new TextDecoder('utf-8').decode(u); }
+        if (text.indexOf('計算対象') === -1 && text.indexOf('大項目') === -1) {
+          try { text = new TextDecoder('utf-8').decode(u); } catch {}
+        }
+        const mIdx = (+it.ym.split('-')[1]) - 1; // 月→列(0-11)
+        importMFCsvToMonth(text, mIdx);
+        ok++; okList.push(`${+it.ym.split('-')[1]}月`);
+      } catch (err) { (d.errors = d.errors || []).push(it.ym + ': 解析失敗'); }
+    });
+    const res = document.getElementById('mfAutoResult');
+    if (res) res.innerHTML =
+      (ok ? `<span style="color:var(--green);font-weight:700;">✅ ${okList.join('・')} の${ok}ヶ月分を年間収支シートへ反映しました</span>` : '') +
+      ((d.errors && d.errors.length) ? `<br><span style="color:var(--rose);">⚠ 失敗: ${d.errors.join(' / ')}</span>` : '');
+    if (ok) showToast(`MFから${ok}ヶ月分を取込みました`);
+  });
+})();
 
 const INPUT_IDS = [
   'currentAge','spouseAge','child1Age','child2Age',
