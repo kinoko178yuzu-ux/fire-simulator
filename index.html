@@ -2221,7 +2221,13 @@ function renderBudgetSheet() {
     const tds = arr.map((v,m)=>`<td>${cell(r.key,m,v)}</td>`).join('');
     return `<tr data-group="${group}"><td class="bg-rowlabel">${r.label}</td>${tds}<td class="bg-avg" data-avgk="${r.key}">–</td></tr>`;
   };
-  const importBtns = months.map((mn,m)=>`<th><div>${mn}</div><button type="button" class="bg-imp" data-m="${m}" title="${mn}にMF CSVを取込">📥</button></th>`).join('');
+  const mfMeta = b._mfMeta || {};
+  const importBtns = months.map((mn,m)=>{
+    const done = mfMeta[m];
+    const icon = done ? '✅' : '📥';
+    const tip = done ? `MF取込済（${done}）。クリックで再取込` : `${mn}にMF CSVを取込`;
+    return `<th><div>${mn}</div><button type="button" class="bg-imp" data-m="${m}" title="${tip}">${icon}</button></th>`;
+  }).join('');
   host.innerHTML = `
   <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:6px;">
     <table class="bg-table">
@@ -2321,9 +2327,11 @@ function drawBudgetPie() {
   });
 }
 
-/** 画面の入力値を budgetSheetJson に書き戻す */
+/** 画面の入力値を budgetSheetJson に書き戻す（_で始まるメタ情報は保全する） */
 function writeBudgetFromInputs() {
+  const prev = getBudget();
   const b = {};
+  Object.keys(prev).forEach(k => { if (k.startsWith('_')) b[k] = prev[k]; });
   document.querySelectorAll('#budgetSheet .bg-cell').forEach(inp => {
     const k = inp.dataset.k, m = +inp.dataset.m;
     if (!b[k]) b[k] = new Array(12).fill(0);
@@ -2420,6 +2428,10 @@ function importMFCsvToMonth(text, monthIdx) {
     if (!b[r.key]) b[r.key] = new Array(12).fill(0);
     if (agg[r.key] != null) b[r.key][monthIdx] = Math.round(agg[r.key]/10000*10)/10; // 円→万 0.1
   });
+  // 取込済み月を記録（月見出しの✅表示用。旧データは _mfMeta 無し=全部📥のまま動く）
+  b._mfMeta = b._mfMeta || {};
+  const now = new Date();
+  b._mfMeta[monthIdx] = `${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()}`;
   setBudget(b);
   renderBudgetSheet(); // 値を反映して再描画
   calculate();
