@@ -2155,6 +2155,7 @@ const BUDGET_ALL_EXP = [...BUDGET_LIVING_ROWS, ...BUDGET_OTHER_ROWS];
 const MF_BIG_MAP = {
   '食費':'food','水道・光熱費':'util','水道光熱費':'util','通信費':'comm','日用品':'daily',
   '衣服・美容':'cloth','健康・医療':'medical','自動車':'car','交通費':'car','趣味・娯楽':'hobby',
+  '保険':'insurance','交際費':'other',
   'その他':'other','特別な支出':'other','教養・教育':'edu','住宅':'loan',
   '税・社会保障':'tax','税・社会保険':'tax','現金・カード':'_skip','未分類':'_skip','振替':'_skip',
 };
@@ -2267,7 +2268,13 @@ function renderBudgetSheet() {
         if (text.indexOf('計算対象') === -1 && text.indexOf('大項目') === -1) {
           try { text = new TextDecoder('utf-8').decode(new Uint8Array(buf)); } catch {}
         }
-        importMFCsvToMonth(text, bgImportMonth);
+        const skipped = importMFCsvToMonth(text, bgImportMonth);
+        const warn = mfSkippedWarnHtml(bgImportMonth, skipped);
+        if (warn) {
+          const res = document.getElementById('mfAutoResult');
+          if (res) res.innerHTML = warn;
+          if (typeof showToast === 'function') showToast(`⚠ 未対応カテゴリをスキップしました（詳細はMF取込欄）`);
+        }
       } catch (err) {}
       e.target.value = '';
     };
@@ -2381,12 +2388,14 @@ function updateBudgetTotals() {
   if (typeof renderDivCompare === 'function') renderDivCompare();
 }
 
-/** MF CSV を指定月の列へ取込（支出＝大項目別、収入＝中項目別） */
+/** MF CSV を指定月の列へ取込（支出＝大項目別、収入＝中項目別）
+ *  戻り値: マップ未対応でスキップした大項目 { 大項目名: 円 }（呼び出し側が警告表示に使う） */
 function importMFCsvToMonth(text, monthIdx) {
   const rows = parseCSV(text);
-  if (!rows.length) return;
+  if (!rows.length) return {};
   let start = (rows[0] && rows[0].some(c => (c||'').includes('計算対象') || (c||'').includes('大項目'))) ? 1 : 0;
   const agg = {}; // rowKey -> yen
+  const skipped = {}; // マップに無い大項目 -> yen（黙って捨てると合計がMFと合わなくなる）
   for (let i = start; i < rows.length; i++) {
     const r = rows[i]; if (!r || r.length < 9) continue;
     const keep=(r[0]||'').trim(), amt=parseInt((r[3]||'').replace(/[^0-9\-]/g,''),10)||0;
@@ -2401,7 +2410,8 @@ function importMFCsvToMonth(text, monthIdx) {
       agg[k]=(agg[k]||0)+amt;
     } else {
       const k = MF_BIG_MAP[big];
-      if (!k || k==='_skip') continue;
+      if (k==='_skip') continue;
+      if (!k) { const name = big || '(大項目なし)'; skipped[name]=(skipped[name]||0)+(-amt); continue; }
       agg[k]=(agg[k]||0)+(-amt);
     }
   }
@@ -2414,6 +2424,15 @@ function importMFCsvToMonth(text, monthIdx) {
   renderBudgetSheet(); // 値を反映して再描画
   calculate();
   if (typeof debouncedSave === 'function') debouncedSave();
+  return skipped;
+}
+
+/** スキップ警告の表示文を組み立てる（月番号0-11） */
+function mfSkippedWarnHtml(monthIdx, skipped) {
+  const keys = Object.keys(skipped || {});
+  if (!keys.length) return '';
+  const msg = keys.map(k => `${k} ${skipped[k].toLocaleString()}円`).join('、');
+  return `<span style="color:var(--rose);">⚠ ${monthIdx+1}月: 未対応カテゴリをスキップ → ${msg}（シートの合計に含まれていません。報告すればマッピングを追加できます）</span>`;
 }
 
 document.addEventListener('DOMContentLoaded', () => { renderBudgetSheet(); });
@@ -2465,7 +2484,7 @@ document.addEventListener('DOMContentLoaded', () => { renderBudgetSheet(); });
   document.addEventListener('mf-export-result', (e) => {
     const d = e.detail || {};
     const items = d.items || [];
-    let ok = 0; const okList = [];
+    let ok = 0; const okList = []; const warns = [];
     items.forEach(it => {
       try {
         const bin = atob(it.b64);
@@ -2477,13 +2496,16 @@ document.addEventListener('DOMContentLoaded', () => { renderBudgetSheet(); });
           try { text = new TextDecoder('utf-8').decode(u); } catch {}
         }
         const mIdx = (+it.ym.split('-')[1]) - 1; // 月→列(0-11)
-        importMFCsvToMonth(text, mIdx);
+        const skipped = importMFCsvToMonth(text, mIdx);
+        const warn = mfSkippedWarnHtml(mIdx, skipped);
+        if (warn) warns.push(warn);
         ok++; okList.push(`${+it.ym.split('-')[1]}月`);
       } catch (err) { (d.errors = d.errors || []).push(it.ym + ': 解析失敗'); }
     });
     const res = document.getElementById('mfAutoResult');
     if (res) res.innerHTML =
       (ok ? `<span style="color:var(--green);font-weight:700;">✅ ${okList.join('・')} の${ok}ヶ月分を年間収支シートへ反映しました</span>` : '') +
+      (warns.length ? '<br>' + warns.join('<br>') : '') +
       ((d.errors && d.errors.length) ? `<br><span style="color:var(--rose);">⚠ 失敗: ${d.errors.join(' / ')}</span>` : '');
     if (ok) showToast(`MFから${ok}ヶ月分を取込みました`);
   });
