@@ -480,6 +480,10 @@ body.mode-sim .mode-plan { display:none !important; }
 .bg-balance td { font-weight: 700; background: #eef5f0; }
 .bg-imp { background: none; border: none; cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
 .bg-imp:hover { transform: scale(1.2); }
+/* どの行を編集中か追いやすく（データ行のみ。合計行は対象外） */
+.bg-table tr[data-group]:hover td { background: var(--teal-bg); }
+.bg-table tr[data-group]:hover .bg-rowlabel { background: var(--teal-bg); }
+.bg-table tr[data-group]:hover .bg-cell { background: #fffef8; }
 /* ★NEW 配当管理: 支払月トグル */
 .dv-month { width: 24px; height: 22px; padding: 0; font-size: 10px; font-family: inherit; border: 1px solid var(--border); background: var(--bg-subtle); color: var(--ink-mute); cursor: pointer; border-radius: 3px; }
 .dv-month.on { background: var(--teal); border-color: var(--teal); color: #fff; font-weight: 700; }
@@ -2256,6 +2260,15 @@ function renderBudgetSheet() {
   host.querySelectorAll('.bg-cell').forEach(inp => {
     inp.addEventListener('input', () => { writeBudgetFromInputs(); updateBudgetTotals(); });
     inp.addEventListener('change', () => { writeBudgetFromInputs(); updateBudgetTotals(); drawBudgetPie(); calculate(); if (typeof debouncedSave==='function') debouncedSave(); });
+    // 連続入力しやすく: フォーカスで全選択、Enterで同じ月の次の費目へ（Shift+Enterで戻る）
+    inp.addEventListener('focus', () => inp.select());
+    inp.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter') return;
+      ev.preventDefault();
+      const cells = [...host.querySelectorAll(`.bg-cell[data-m="${inp.dataset.m}"]`)];
+      const next = cells[cells.indexOf(inp) + (ev.shiftKey ? -1 : 1)];
+      if (next) { next.focus(); next.select(); }
+    });
   });
   // 月別MF取込
   let bgImportMonth = null;
