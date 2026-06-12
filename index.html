@@ -480,6 +480,9 @@ body.mode-sim .mode-plan { display:none !important; }
 .bg-balance td { font-weight: 700; background: #eef5f0; }
 .bg-imp { background: none; border: none; cursor: pointer; font-size: 12px; padding: 0; line-height: 1; }
 .bg-imp:hover { transform: scale(1.2); }
+/* ★NEW 配当管理: 支払月トグル */
+.dv-month { width: 24px; height: 22px; padding: 0; font-size: 10px; font-family: inherit; border: 1px solid var(--border); background: var(--bg-subtle); color: var(--ink-mute); cursor: pointer; border-radius: 3px; }
+.dv-month.on { background: var(--teal); border-color: var(--teal); color: #fff; font-weight: 700; }
 .field-row {
   display: flex;
   justify-content: space-between;
@@ -1245,6 +1248,14 @@ select:focus { border-color: var(--teal); }
               </div>
             </div>
             <input type="hidden" id="currentAssets" value="500">
+            <!-- ★NEW 資産スナップショット記録 -->
+            <div class="field" style="margin-top:10px;">
+              <button type="button" id="snapBtn" style="width:100%;padding:9px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">📸 現在資産を記録（計画との乖離をチェック）</button>
+              <input type="hidden" id="assetHistoryJson" value="[]">
+              <div id="snapPlanDiff" style="font-size:11.5px;margin-top:6px;"></div>
+              <div id="snapHistory" style="margin-top:6px;"></div>
+              <div class="help" style="margin-top:4px;">月1回押すと記録が貯まり、総資産推移グラフに実績（◆）が重なって表示されます。同日の再記録は上書き。</div>
+            </div>
             <div class="field" style="margin-top: 12px;">
               <div class="field-row"><span class="field-label">現在の年収(額面)</span></div>
               <div class="input-group"><input type="number" id="currentSalary" value="606" min="0" step="10"><span class="unit">万円</span></div>
@@ -1821,6 +1832,26 @@ select:focus { border-color: var(--teal); }
         <div id="budgetSheet"></div>
       </div>
 
+      <!-- ★NEW 配当管理（予定 vs 実績） -->
+      <div class="card mode-plan" id="dividendCard">
+        <h3><span class="dot"></span>💰 配当管理（予定 vs 実績入金）</h3>
+        <div style="font-size:11.5px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
+          銘柄ごとに<strong>年間予想配当と支払月</strong>を登録すると、月別の予定額を自動計算。<strong>実績入金はMF CSV取込（配当所得）から自動集計</strong>され、毎月「予定どおり入金されたか」を比較できます。<br>
+          <span style="font-size:10.5px;color:var(--ink-mute);">銘柄はマネーフォワードのポートフォリオ画面（株式・現物の表）をコピー＆貼り付けで一括登録できます。</span>
+        </div>
+        <details style="margin-bottom:10px;">
+          <summary style="font-size:12px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📋 MFポートフォリオ画面の貼り付けで銘柄を一括登録</summary>
+          <p class="desc" style="font-size:10.5px;margin:6px 0;">moneyforward.com/bs/portfolio の「株式（現物）」表を範囲選択してコピー → 下に貼り付け → 解析ボタン。既存銘柄は保有数のみ更新され、入力済みの予想配当・支払月は保持されます。</p>
+          <textarea id="divPasteArea" rows="5" placeholder="例: 1343	NFJ-REIT	215	1,886	1,930	414,842円	5,590円	9,353円	2.31%	SBI証券" style="width:100%;font-size:11px;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:var(--bg-subtle);padding:8px;box-sizing:border-box;"></textarea>
+          <button type="button" id="divParseBtn" style="width:100%;margin-top:6px;padding:8px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">解析して銘柄リストへ登録</button>
+          <div id="divParseResult" style="font-size:11px;margin-top:6px;"></div>
+        </details>
+        <div id="divStockList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
+        <button type="button" id="divAddBtn" style="width:100%;padding:8px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">＋ 銘柄を追加</button>
+        <input type="hidden" id="dividendListJson" value="[]">
+        <div id="divCompare" style="margin-top:14px;"></div>
+      </div>
+
       <div class="fail-rate-banner mode-sim" id="failRateBanner">
         <div class="label">現在の計画 / 破綻確率</div>
         <div class="num"><span id="failRateNum">--</span>%</div>
@@ -2346,6 +2377,8 @@ function updateBudgetTotals() {
     if (mEl) { mEl.readOnly = false; mEl.style.background = ''; }
     if (summary) summary.innerHTML = `<div style="color:var(--ink-mute);font-size:11px;">まだ未入力です。各月のセルに入力するか、月見出しの 📥 でMFのCSVをその月に取り込めます。空欄のままなら左の「FIRE後の生活費」をそのまま使います。</div>`;
   }
+  // ★NEW 配当の実績はこのシートのdividend行を参照しているため、比較表も更新
+  if (typeof renderDivCompare === 'function') renderDivCompare();
 }
 
 /** MF CSV を指定月の列へ取込（支出＝大項目別、収入＝中項目別） */
@@ -2456,6 +2489,233 @@ document.addEventListener('DOMContentLoaded', () => { renderBudgetSheet(); });
   });
 })();
 
+/** ====================================
+ *  ★NEW 配当管理（銘柄リスト・予定vs実績）
+ *  ==================================== */
+function getDivList() {
+  try { const a = JSON.parse(document.getElementById('dividendListJson').value || '[]'); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+function setDivList(arr, opts = {}) {
+  document.getElementById('dividendListJson').value = JSON.stringify(arr);
+  if (!opts.skipRender) renderDivStocks();
+  renderDivCompare();
+  if (typeof debouncedSave === 'function' && !isApplyingCloud) debouncedSave();
+}
+
+/** 銘柄行を描画 */
+function renderDivStocks() {
+  const host = document.getElementById('divStockList');
+  if (!host) return;
+  const arr = getDivList();
+  host.innerHTML = '';
+  const inS = 'padding:5px 6px;font-size:11.5px;border:1px solid var(--border);background:var(--bg-subtle);font-family:inherit;';
+  arr.forEach((s, idx) => {
+    const row = document.createElement('div');
+    row.className = 'div-stock-row';
+    row.style.cssText = 'background:var(--bg-card);border:1px solid var(--border-soft);border-radius:6px;padding:7px 8px;display:flex;flex-direction:column;gap:5px;';
+    const monthBtns = Array.from({length:12}, (_,m) =>
+      `<button type="button" class="dv-month ${ (s.months||[]).includes(m+1) ? 'on' : '' }" data-m="${m+1}">${m+1}</button>`).join('');
+    row.innerHTML = `
+      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
+        <input type="text" class="dv-name" value="${esc(s.name||'')}" placeholder="銘柄名" style="${inS}flex:1;min-width:110px;">
+        <input type="number" class="dv-shares" value="${s.shares||''}" placeholder="株数" min="0" style="${inS}width:64px;text-align:right;" title="保有数">
+        <span style="font-size:10px;color:var(--ink-mute);">株</span>
+        <input type="number" class="dv-annual" value="${s.annual||''}" placeholder="年間配当" min="0" step="100" style="${inS}width:84px;text-align:right;" title="年間予想配当（円）">
+        <span style="font-size:10px;color:var(--ink-mute);">円/年</span>
+        <button type="button" class="dv-del" style="background:none;border:none;font-size:16px;color:var(--rose);cursor:pointer;padding:0 2px;line-height:1;">×</button>
+      </div>
+      <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:9.5px;color:var(--ink-mute);margin-right:2px;">支払月</span>${monthBtns}
+      </div>`;
+    const commit = () => {
+      const a = getDivList();
+      a[idx] = {
+        ...a[idx],
+        name:   row.querySelector('.dv-name').value.trim(),
+        shares: +row.querySelector('.dv-shares').value || 0,
+        annual: +row.querySelector('.dv-annual').value || 0,
+        months: Array.from(row.querySelectorAll('.dv-month.on')).map(b => +b.dataset.m),
+      };
+      setDivList(a, { skipRender: true }); // 入力中のフォーカスを保つ
+    };
+    row.querySelectorAll('.dv-name,.dv-shares,.dv-annual').forEach(el => el.addEventListener('input', commit));
+    row.querySelectorAll('.dv-month').forEach(b => b.addEventListener('click', () => { b.classList.toggle('on'); commit(); }));
+    row.querySelector('.dv-del').addEventListener('click', () => { const a = getDivList(); a.splice(idx,1); setDivList(a); });
+    host.appendChild(row);
+  });
+  // 年間予想合計
+  const totalAnnual = arr.reduce((s, x) => s + (+x.annual || 0), 0);
+  if (arr.length) {
+    const sum = document.createElement('div');
+    sum.style.cssText = 'text-align:right;font-size:12px;font-weight:700;color:var(--teal-deep);padding:4px 6px;';
+    sum.textContent = `年間予想配当 合計: ${totalAnnual.toLocaleString()}円（月平均 ${(totalAnnual/12/10000).toFixed(1)}万）`;
+    host.appendChild(sum);
+  }
+}
+
+/** MFポートフォリオ画面の貼り付けテキストを解析 */
+function parseMFPortfolio(text) {
+  const out = [];
+  for (const raw of text.split(/\r?\n/)) {
+    const ln = raw.trim();
+    if (!ln || ln.startsWith('合計') || ln.includes('銘柄名') || ln.startsWith('株式')) continue;
+    const cells = ln.split(/\t+|\s+/).filter(Boolean);
+    if (cells.length < 3) continue;
+    if (!/^\d{3,4}[A-Z]?$/.test(cells[0])) continue; // 行頭=銘柄コード
+    const name = cells[1];
+    const shares = parseInt((cells[2]||'').replace(/,/g,''), 10) || 0;
+    if (!name || !shares) continue;
+    out.push({ code: cells[0], name, shares });
+  }
+  return out;
+}
+
+/** 解析結果を銘柄リストへマージ（同名は保有数のみ更新、予想配当・支払月は保持） */
+function mergePortfolio(parsed) {
+  const arr = getDivList();
+  let added = 0, updated = 0;
+  parsed.forEach(p => {
+    const hit = arr.find(s => s.name === p.name || (p.code && s.code === p.code));
+    if (hit) { hit.shares = p.shares; hit.code = p.code; updated++; }
+    else { arr.push({ code: p.code, name: p.name, shares: p.shares, annual: 0, months: [] }); added++; }
+  });
+  setDivList(arr);
+  return { added, updated };
+}
+
+/** 月別 予定 vs 実績（実績=年間収支シートの配当行） */
+function renderDivCompare() {
+  const host = document.getElementById('divCompare');
+  if (!host) return;
+  const arr = getDivList();
+  const hasPlan = arr.some(s => (+s.annual||0) > 0 && (s.months||[]).length);
+  if (!hasPlan) { host.innerHTML = '<div style="font-size:11px;color:var(--ink-mute);">銘柄に年間予想配当と支払月を入力すると、ここに月別の「予定 vs 実績」が表示されます。</div>'; return; }
+  // 予定（円）
+  const plan = new Array(12).fill(0);
+  arr.forEach(s => {
+    const ms = (s.months||[]).filter(m => m>=1 && m<=12);
+    if (!ms.length || !(+s.annual)) return;
+    ms.forEach(m => { plan[m-1] += (+s.annual) / ms.length; });
+  });
+  // 実績（年間収支シート dividend行: 万円→円）。未入力月は「–」
+  const b = (typeof getBudget === 'function') ? getBudget() : {};
+  const divRow = budgetRowArr(b, 'dividend');
+  const monthHasData = (m) => [...BUDGET_INCOME_ROWS, ...BUDGET_ALL_EXP].some(r => +budgetRowArr(b, r.key)[m] > 0);
+  const man = v => (v/10000).toFixed(1);
+  let planTotal = 0, actTotal = 0, actTotalForRate = 0, planForRate = 0;
+  let cells = { plan:'', act:'', diff:'' };
+  for (let m = 0; m < 12; m++) {
+    const p = plan[m];
+    const has = monthHasData(m);
+    const a = has ? (+divRow[m]||0) * 10000 : null;
+    planTotal += p;
+    if (a != null) { actTotal += a; if (p>0 || a>0) { planForRate += p; actTotalForRate += a; } }
+    cells.plan += `<td class="bg-mtotal">${p ? man(p) : '–'}</td>`;
+    cells.act  += a == null
+      ? `<td class="bg-mtotal" style="color:var(--ink-mute);" title="この月のCSV/収支が未入力">未</td>`
+      : `<td class="bg-mtotal" style="font-weight:700;color:var(--teal-deep);">${man(a)}</td>`;
+    const d = a == null ? null : a - p;
+    cells.diff += d == null ? '<td class="bg-mtotal">–</td>'
+      : `<td class="bg-mtotal" style="color:${d < 0 ? 'var(--rose)' : 'var(--green)'};">${d>=0?'+':''}${man(d)}</td>`;
+  }
+  const rate = planForRate > 0 ? (actTotalForRate / planForRate * 100) : null;
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  host.innerHTML = `
+    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;">📅 月別 予定 vs 実績（万円）</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:6px;">
+      <table class="bg-table" style="min-width:760px;">
+        <thead><tr><th class="bg-rowlabel">　</th>${months.map(m=>`<th>${m}</th>`).join('')}<th>年間</th></tr></thead>
+        <tbody>
+          <tr><td class="bg-rowlabel">予定配当</td>${cells.plan}<td class="bg-avg">${man(planTotal)}</td></tr>
+          <tr><td class="bg-rowlabel">実績入金</td>${cells.act}<td class="bg-avg">${man(actTotal)}</td></tr>
+          <tr><td class="bg-rowlabel">差額</td>${cells.diff}<td class="bg-avg" style="color:${actTotal-planTotal<0?'var(--rose)':'var(--green)'};">${actTotal-planTotal>=0?'+':''}${man(actTotal-planTotal)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="font-size:11.5px;margin-top:6px;color:var(--ink-soft);">
+      ${rate != null ? `達成率（CSV取込済み月のみで比較）: <b style="color:${rate>=95?'var(--green)':rate>=80?'var(--amber)':'var(--rose)'};">${rate.toFixed(0)}%</b>　` : ''}
+      <span style="font-size:10.5px;color:var(--ink-mute);">「未」=その月の年間収支シートが未入力（MF CSVを取り込むと実績が入ります）</span>
+    </div>`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderDivStocks(); renderDivCompare();
+  const addBtn = document.getElementById('divAddBtn');
+  if (addBtn) addBtn.addEventListener('click', () => {
+    const a = getDivList(); a.push({ name:'', shares:0, annual:0, months:[] }); setDivList(a);
+  });
+  const parseBtn = document.getElementById('divParseBtn');
+  if (parseBtn) parseBtn.addEventListener('click', () => {
+    const ta = document.getElementById('divPasteArea');
+    const res = document.getElementById('divParseResult');
+    const parsed = parseMFPortfolio(ta.value || '');
+    if (!parsed.length) { if (res) res.innerHTML = '<span style="color:var(--rose);">銘柄行が見つかりません。表の行（銘柄コードから始まる行）を含めてコピーしてください。</span>'; return; }
+    const { added, updated } = mergePortfolio(parsed);
+    if (res) res.innerHTML = `<span style="color:var(--green);font-weight:700;">✅ ${parsed.length}銘柄を解析 — 新規 ${added} / 更新 ${updated}</span>　<span style="color:var(--ink-mute);">各銘柄の年間予想配当と支払月を入力してください。</span>`;
+    ta.value = '';
+  });
+});
+
+/** ====================================
+ *  ★NEW 資産スナップショット（実績記録と計画乖離）
+ *  ==================================== */
+function getAssetHistory() {
+  try { const a = JSON.parse(document.getElementById('assetHistoryJson').value || '[]'); return Array.isArray(a) ? a : []; }
+  catch { return []; }
+}
+function setAssetHistory(arr) {
+  arr.sort((x, y) => x.date < y.date ? -1 : 1);
+  document.getElementById('assetHistoryJson').value = JSON.stringify(arr);
+  renderAssetHistory();
+  if (typeof debouncedSave === 'function' && !isApplyingCloud) debouncedSave();
+}
+function takeAssetSnapshot() {
+  const today = new Date();
+  const date = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const snap = {
+    date,
+    cash:     +inputs.assetCash.value || 0,
+    index:    +inputs.assetIndex.value || 0,
+    dividend: +inputs.assetDividend.value || 0,
+  };
+  snap.total = Math.round((snap.cash + snap.index + snap.dividend) * 10) / 10;
+  const arr = getAssetHistory().filter(s => s.date !== date); // 同日上書き
+  arr.push(snap);
+  setAssetHistory(arr);
+  showToast(`${date} の資産 ${snap.total.toLocaleString()}万円を記録しました`);
+  calculate(); // グラフに反映
+}
+function renderAssetHistory() {
+  const host = document.getElementById('snapHistory');
+  if (!host) return;
+  const arr = getAssetHistory();
+  if (!arr.length) { host.innerHTML = ''; return; }
+  let rows = '';
+  arr.slice().reverse().forEach((s, ri) => {
+    const idx = arr.length - 1 - ri;
+    const prev = idx > 0 ? arr[idx-1].total : null;
+    const diff = prev != null ? s.total - prev : null;
+    rows += `<tr>
+      <td style="padding:3px 6px;">${s.date}</td>
+      <td style="padding:3px 6px;text-align:right;font-weight:700;color:var(--teal-deep);">${s.total.toLocaleString()}万</td>
+      <td style="padding:3px 6px;text-align:right;color:${diff==null?'var(--ink-mute)':diff<0?'var(--rose)':'var(--green)'};">${diff==null?'–':(diff>=0?'+':'')+diff.toLocaleString()+'万'}</td>
+      <td style="padding:3px 2px;"><button type="button" data-snapdel="${idx}" style="background:none;border:none;color:var(--rose);cursor:pointer;font-size:13px;line-height:1;">×</button></td>
+    </tr>`;
+  });
+  host.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+    <thead><tr style="color:var(--ink-mute);"><th style="text-align:left;padding:2px 6px;">記録日</th><th style="text-align:right;padding:2px 6px;">総資産</th><th style="text-align:right;padding:2px 6px;">前回比</th><th></th></tr></thead>
+    <tbody>${rows}</tbody></table>`;
+  host.querySelectorAll('[data-snapdel]').forEach(btn => btn.addEventListener('click', () => {
+    const a = getAssetHistory(); a.splice(+btn.dataset.snapdel, 1); setAssetHistory(a); calculate();
+  }));
+}
+document.addEventListener('DOMContentLoaded', () => {
+  renderAssetHistory();
+  const btn = document.getElementById('snapBtn');
+  if (btn) btn.addEventListener('click', takeAssetSnapshot);
+});
+
 const INPUT_IDS = [
   'currentAge','spouseAge','child1Age','child2Age',
   'child1IndependAge','child2IndependAge','child1Reduce','child2Reduce',
@@ -2465,7 +2725,7 @@ const INPUT_IDS = [
   'monthlyInvest','bonusInvest','returnAcc','returnRet','volatility','nisaRatio',
   'divGrowth','divYield','divNisaRatio',
   'monthlyLifeExHouse','annualSpecial','sideIncomeGross','sideExpenseRatio','sideIncomeEndAge','inflation',
-  'budgetSheetJson',
+  'budgetSheetJson','dividendListJson','assetHistoryJson',
   'loanBalance','loanRate','loanYears','loanMonthly','loanBonus',
   'taxCreditYears','taxCreditAmount','loanPayoff','payoffTiming','payoffCustomYear',
   'child1Path','child2Path',
@@ -2626,6 +2886,8 @@ function loadData() {
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
     if (typeof renderSpotEvents === 'function') renderSpotEvents();
     if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
+    if (typeof renderDivStocks === 'function') { renderDivStocks(); renderDivCompare(); }
+    if (typeof renderAssetHistory === 'function') renderAssetHistory();
     calculate(); showToast('読み込みました');
   } catch(e) { showToast('読込に失敗'); }
 }
@@ -2719,6 +2981,8 @@ function applyAllData(data) {
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
     if (typeof renderSpotEvents === 'function') renderSpotEvents();  // ライフイベントリストを再描画
     if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
+    if (typeof renderDivStocks === 'function') { renderDivStocks(); renderDivCompare(); }
+    if (typeof renderAssetHistory === 'function') renderAssetHistory();
     calculate();
   } finally {
     isApplyingCloud = false;
@@ -4186,6 +4450,41 @@ function drawTotalAssetChart(params, fireYear) {
       order: 2,
     });
   }
+
+  /** ★NEW 資産スナップショット実績を◆でオーバーレイ＋計画乖離表示 */
+  const snaps = (typeof getAssetHistory === 'function') ? getAssetHistory() : [];
+  const diffEl = document.getElementById('snapPlanDiff');
+  if (snaps.length) {
+    const nowMs = Date.now(), Y = 365.25 * 24 * 3600 * 1000;
+    const snapData = new Array(labels.length).fill(null);
+    let lastIdx = 0;
+    snaps.forEach(s => {
+      const idx = Math.min(Math.max(Math.round((new Date(s.date).getTime() - nowMs) / Y), 0), labels.length - 1);
+      snapData[idx] = s.total; // 同年内は新しい記録が上書き
+      lastIdx = idx;
+    });
+    datasets.push({
+      label: '📸 実績記録',
+      data: snapData,
+      borderColor: '#b8413d',
+      backgroundColor: '#b8413d',
+      showLine: false,
+      pointRadius: 5,
+      pointHoverRadius: 7,
+      pointStyle: 'rectRot',
+      order: 0,
+    });
+    // 計画乖離: 最新スナップショット vs メインシナリオの計画値
+    if (diffEl) {
+      const latest = snaps[snaps.length - 1];
+      const planVal = trajectories[mainSc - 1] ? trajectories[mainSc - 1].assetsArr[lastIdx] : null;
+      if (planVal != null) {
+        const d = Math.round(latest.total - planVal);
+        const col = d >= 0 ? 'var(--green)' : 'var(--rose)';
+        diffEl.innerHTML = `<span style="background:var(--bg-subtle);border-left:3px solid ${col};padding:4px 10px;display:inline-block;">最新記録（${latest.date}）: <b>${latest.total.toLocaleString()}万</b> ／ 計画値 ${planVal.toLocaleString()}万 → <b style="color:${col};">計画比 ${d>=0?'+':''}${d.toLocaleString()}万</b></span>`;
+      }
+    }
+  } else if (diffEl) { diffEl.innerHTML = ''; }
 
   const ctx = document.getElementById('totalAssetChart').getContext('2d');
   if (totalAssetChart) totalAssetChart.destroy();
