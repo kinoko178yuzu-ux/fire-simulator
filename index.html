@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@3.1.0/dist/chartjs-chart-treemap.min.js"></script>
 <!-- Firebase（クラウド同期用） -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -2842,8 +2843,24 @@ function pfMonthly(rows){
   return { gross, net };
 }
 
-let hdCharts = { sector:null, cyc:null, yield:null, month:null };
+let hdCharts = { sector:null, cyc:null, yield:null, month:null, tree:null };
 function destroyHdCharts(){ Object.keys(hdCharts).forEach(k=>{ if(hdCharts[k]){ hdCharts[k].destroy(); hdCharts[k]=null; } }); }
+let hdLastRows = [];
+/** IR BANK / Yahoo!ファイナンスへのリンクセル */
+function hdLinks(code){
+  const jp = /^\d/.test(code);
+  const ir = jp ? `<a href="https://irbank.net/${code}" target="_blank" rel="noopener" style="color:var(--teal-deep);">IR</a>` : '–';
+  const yh = jp ? `https://finance.yahoo.co.jp/quote/${code}.T` : `https://finance.yahoo.com/quote/${code}`;
+  return `<td style="text-align:center;">${ir}</td><td style="text-align:center;"><a href="${yh}" target="_blank" rel="noopener" style="color:var(--teal-deep);">Y!</a></td>`;
+}
+/** 配当金Top20を業種フィルタで描画 */
+function renderHdTop20(){
+  const sel=document.getElementById('hdTopSector'), body=document.getElementById('hdTop20Body');
+  if(!sel||!body) return;
+  const s=sel.value;
+  const list=hdLastRows.filter(r=>s==='__all__'||r.sector===s).sort((a,b)=>b.dividend-a.dividend).slice(0,20);
+  body.innerHTML=list.map((r,i)=>`<tr><td style="text-align:right;color:var(--ink-mute);">${i+1}</td><td>${r.code}</td><td style="text-align:left;">${r.name}</td><td style="text-align:left;color:var(--ink-mute);font-size:10px;">${r.sector}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">${yenComma(r.dividend)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--ink-mute);">該当なし</td></tr>';
+}
 
 /** ダッシュボード描画 */
 function renderHighDiv(){
@@ -2873,15 +2890,14 @@ function renderHighDiv(){
   const buckets=['~1.0','~1.5','~2.0','~2.5','~3.0','~3.5','~4.0','~4.5','~5.0','~5.5','~6.0','6.0以上'];
   const hist=new Array(buckets.length).fill(0);
   rows.forEach(r=>{ const y=r.ynow; let i=Math.floor((y-0.0001)/0.5); if(y>=6) i=11; if(i<0)i=0; if(i>11)i=11; hist[i]++; });
-  // Top20
-  const top=[...rows].sort((a,b)=>b.dividend-a.dividend).slice(0,20);
+  hdLastRows = rows;
 
   const card=(label,val,sub,color)=>`<div style="background:var(--bg-subtle);border:1px solid var(--border-soft);border-radius:8px;padding:10px 12px;">
     <div style="font-size:10.5px;color:var(--ink-mute);font-weight:700;">${label}</div>
     <div style="font-size:18px;font-weight:800;color:${color||'var(--ink)'};font-family:'JetBrains Mono',monospace;">${val}</div>
     ${sub?`<div style="font-size:10.5px;color:var(--ink-mute);">${sub}</div>`:''}</div>`;
 
-  const topRows=top.map((r,i)=>`<tr><td style="text-align:right;color:var(--ink-mute);">${i+1}</td><td>${r.code}</td><td style="text-align:left;">${r.name}</td><td style="text-align:left;color:var(--ink-mute);font-size:10px;">${r.sector}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">${yenComma(r.dividend)}</td></tr>`).join('');
+  const sectorOpts = ['<option value="__all__">全業種</option>'].concat(sectors.map(s=>`<option value="${s}">${s}</option>`)).join('');
 
   const allRows=[...rows].sort((a,b)=>b.evalv-a.evalv).map(r=>{
     const w=totalEval? (r.evalv/totalEval*100):0;
@@ -2896,7 +2912,8 @@ function renderHighDiv(){
       <td style="text-align:right;">${yenComma(r.dps)}</td>
       <td style="text-align:right;font-weight:700;">${yenComma(r.dividend)}</td>
       <td style="text-align:right;">${r.ynow.toFixed(2)}%</td>
-      <td style="text-align:right;color:var(--ink-mute);">${r.ycost.toFixed(2)}%</td></tr>`;
+      <td style="text-align:right;color:var(--ink-mute);">${r.ycost.toFixed(2)}%</td>
+      ${hdLinks(r.code)}</tr>`;
   }).join('');
 
   host.innerHTML=`
@@ -2919,11 +2936,16 @@ function renderHighDiv(){
         <div style="font-size:11px;font-weight:700;color:var(--ink-soft);margin:10px 0 4px;">銘柄数（利回り別）</div><div style="position:relative;height:150px;"><canvas id="hdYieldChart"></canvas></div>
       </div>
     </div>
-    <details style="margin-bottom:10px;"><summary style="font-size:12px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">🏅 配当金 Top20</summary>
-      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:420px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種</th><th>配当金</th></tr></thead><tbody>${topRows}</tbody></table></div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">銘柄構成比（評価額・景気敏感 / ディフェンシブ）</div>
+      <div style="position:relative;height:300px;"><canvas id="hdTreeChart"></canvas></div>
+    </div>
+    <details style="margin-bottom:10px;" open><summary style="font-size:12px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">🏅 配当金 Top20</summary>
+      <div style="margin:4px 0 8px;"><label style="font-size:11px;color:var(--ink-soft);">業種 <select id="hdTopSector" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">${sectorOpts}</select></label></div>
+      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:420px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種</th><th>配当金</th></tr></thead><tbody id="hdTop20Body"></tbody></table></div>
     </details>
     <details><summary style="font-size:12px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📋 全銘柄（${rows.length}）</summary>
-      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:880px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>保有数</th><th>取得単価</th><th>株価</th><th>評価額</th><th>割合</th><th>損益</th><th>配当単価</th><th>配当金</th><th>利回り時価</th><th>利回り取得</th></tr></thead><tbody>${allRows}</tbody></table></div>
+      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:940px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>保有数</th><th>取得単価</th><th>株価</th><th>評価額</th><th>割合</th><th>損益</th><th>配当単価</th><th>配当金</th><th>利回り時価</th><th>利回り取得</th><th>IR</th><th>Y!</th></tr></thead><tbody>${allRows}</tbody></table></div>
     </details>`;
 
   // チャート
@@ -2938,6 +2960,27 @@ function renderHighDiv(){
   if(yc) hdCharts.yield=new Chart(yc.getContext('2d'),{type:'bar',data:{labels:buckets,datasets:[{data:hist,backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:8}}},y:{ticks:{font:{size:9},stepSize:5}}}}});
   const mc=document.getElementById('hdMonthChart');
   if(mc) hdCharts.month=new Chart(mc.getContext('2d'),{type:'bar',data:{labels:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],datasets:[{data:monthly.gross.map(v=>Math.round(v)),backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${yenComma(c.parsed.y)}円`}}},scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:9},callback:v=>(v/10000)+'万'}}}}});
+  // 銘柄構成比 ツリーマップ（景気敏感/ディフェンシブでグループ化・評価額で面積）
+  const tc=document.getElementById('hdTreeChart');
+  if(tc && Chart.registry.controllers.get('treemap')){
+    const cycSet=new Set(['景気敏感','ディフェンシブ','未分類']);
+    const normCyc=(x)=>cycSet.has(x)?x:'未分類';
+    const totalE=rows.reduce((s,r)=>s+r.evalv,0)||1;
+    const cycSum={}; const cycByName={};
+    rows.forEach(r=>{ const k=normCyc(r.cyc); cycSum[k]=(cycSum[k]||0)+r.evalv; cycByName[r.name]=k; });
+    const tree=rows.map(r=>({name:r.name,evalv:r.evalv,cyc:normCyc(r.cyc)}));
+    const colOf=(k)=>k==='景気敏感'?'#d97706':k==='ディフェンシブ'?'#0d6e6e':'#94a3b8';
+    hdCharts.tree=new Chart(tc.getContext('2d'),{type:'treemap',data:{datasets:[{
+      tree, key:'evalv', groups:['cyc','name'], spacing:0.5, borderWidth:1, borderColor:'#fff',
+      backgroundColor:(c)=>{ if(c.type!=='data'||!c.raw) return 'transparent'; const g=c.raw.g; if(cycSet.has(g)) return 'transparent'; return colOf(cycByName[g]||'未分類'); },
+      captions:{display:true,color:'#fff',font:{size:13,weight:'bold'},padding:4,formatter:(c)=>{ const g=c.raw.g; return cycSet.has(g)?`${g}（${(cycSum[g]/totalE*100).toFixed(0)}%）`:''; }},
+      labels:{display:true,color:'#fff',font:{size:9},overflow:'hidden',formatter:(c)=>{ const g=c.raw.g; return cycSet.has(g)?'':g; }}
+    }]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:(it)=>it[0].raw.g||'',label:(c)=>yenComma(c.raw.v)+'円'}}}}});
+  }
+  // Top20（業種フィルタ）
+  renderHdTop20();
+  const tsel=document.getElementById('hdTopSector');
+  if(tsel) tsel.addEventListener('change', renderHdTop20);
 }
 function yenComma(n){ return Math.round(+n||0).toLocaleString(); }
 
