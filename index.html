@@ -461,8 +461,11 @@ header {
 .app-mode-btn .sub { display:block; font-size:11px; font-weight:400; margin-top:3px; opacity:.85; }
 .app-mode-btn:hover { border-color:var(--teal); }
 .app-mode-btn.active { border-color:var(--teal); background:var(--teal); color:#fff; }
-body.mode-plan .mode-sim { display:none !important; }
-body.mode-sim .mode-plan { display:none !important; }
+body.mode-plan :is(.mode-sim,.mode-div) { display:none !important; }
+body.mode-sim :is(.mode-plan,.mode-div) { display:none !important; }
+body.mode-div :is(.mode-plan,.mode-sim) { display:none !important; }
+body.mode-div .input-panel, body.mode-div .result-hero { display:none !important; }
+body.mode-div .layout { grid-template-columns:1fr; }
 @media (max-width:600px){ .app-mode-bar { padding:0 10px; gap:6px; } .app-mode-btn { font-size:13px; padding:11px 6px; } .app-mode-btn .sub { font-size:9.5px; } }
 /* ★NEW 年間収支シート（12ヶ月グリッド） */
 .bg-table { border-collapse: collapse; font-size: 11px; min-width: 920px; }
@@ -1183,6 +1186,7 @@ select:focus { border-color: var(--teal); }
   <!-- ★NEW アプリ・モード切替 -->
   <div class="app-mode-bar">
     <button type="button" class="app-mode-btn active" data-appmode="plan">📋 ライフプランを立てる<span class="sub">家族・収入・支出・ライフイベントを年表で設計</span></button>
+    <button type="button" class="app-mode-btn" data-appmode="div">💰 配当金を管理する<span class="sub">高配当株ポートフォリオ・予定 vs 実績</span></button>
     <button type="button" class="app-mode-btn" data-appmode="sim">🔥 FIREできるか診断する<span class="sub">運用・税金・年金・破綻確率を分析</span></button>
   </div>
 
@@ -1844,7 +1848,7 @@ select:focus { border-color: var(--teal); }
       </div>
 
       <!-- ★NEW 高配当株 管理（ポートフォリオ・ダッシュボード） -->
-      <div class="card mode-plan" id="highDivCard">
+      <div class="card mode-div" id="highDivCard">
         <h3><span class="dot"></span>🏆 高配当株 管理</h3>
         <div style="font-size:11.5px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
           スプレッドシートの高配当株管理をアプリに移行。<strong>初回だけ「管理シート」CSVを取込</strong>すれば、銘柄・業種・配当単価・景気区分がアプリに保存されます。以後は<strong>MFポートフォリオ貼付で保有数・株価だけ更新</strong>すれば、配当金・評価額・利回りを自動再計算します。
@@ -1863,24 +1867,14 @@ select:focus { border-color: var(--teal); }
         <div id="hdDashboard"></div>
       </div>
 
-      <!-- ★NEW 配当管理（予定 vs 実績） -->
-      <div class="card mode-plan" id="dividendCard">
-        <h3><span class="dot"></span>💰 配当管理（予定 vs 実績入金）</h3>
+      <!-- ★NEW 配当 予定 vs 実績（予定=ポートフォリオの予想配当 / 実績=家計簿CSVの配当所得） -->
+      <div class="card mode-div" id="dividendCard">
+        <h3><span class="dot"></span>📅 配当 予定 vs 実績</h3>
         <div style="font-size:11.5px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
-          銘柄ごとに<strong>年間予想配当と支払月</strong>を登録すると、月別の予定額を自動計算。<strong>実績入金はMF CSV取込（配当所得）から自動集計</strong>され、毎月「予定どおり入金されたか」を比較できます。<br>
-          <span style="font-size:10.5px;color:var(--ink-mute);">銘柄はマネーフォワードのポートフォリオ画面（株式・現物の表）をコピー＆貼り付けで一括登録できます。</span>
+          <strong>予定</strong>は上の高配当株ポートフォリオの予想配当（配当単価×株数）から自動。<strong>実績</strong>は年間収支シートの📈配当行（マネーフォワードCSVの配当所得）から自動集計。毎月「予定どおり入金されたか」を比較できます。
         </div>
-        <details style="margin-bottom:10px;">
-          <summary style="font-size:12px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📋 MFポートフォリオ画面の貼り付けで銘柄を一括登録</summary>
-          <p class="desc" style="font-size:10.5px;margin:6px 0;">moneyforward.com/bs/portfolio の「株式（現物）」表を範囲選択してコピー → 下に貼り付け → 解析ボタン。既存銘柄は保有数のみ更新され、入力済みの予想配当・支払月は保持されます。</p>
-          <textarea id="divPasteArea" rows="5" placeholder="例: 1343	NFJ-REIT	215	1,886	1,930	414,842円	5,590円	9,353円	2.31%	SBI証券" style="width:100%;font-size:11px;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:var(--bg-subtle);padding:8px;box-sizing:border-box;"></textarea>
-          <button type="button" id="divParseBtn" style="width:100%;margin-top:6px;padding:8px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">解析して銘柄リストへ登録</button>
-          <div id="divParseResult" style="font-size:11px;margin-top:6px;"></div>
-        </details>
-        <div id="divStockList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
-        <button type="button" id="divAddBtn" style="width:100%;padding:8px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">＋ 銘柄を追加</button>
         <input type="hidden" id="dividendListJson" value="[]">
-        <div id="divCompare" style="margin-top:14px;"></div>
+        <div id="divCompare"></div>
       </div>
 
       <div class="fail-rate-banner mode-sim" id="failRateBanner">
@@ -2708,59 +2702,46 @@ function mergePortfolio(parsed) {
   return { added, updated };
 }
 
-/** 月別 予定 vs 実績（実績=年間収支シートの配当行） */
+/** 予定 vs 実績（予定=ポートフォリオの予想配当・年間 / 実績=年間収支シートの配当行） */
 function renderDivCompare() {
   const host = document.getElementById('divCompare');
   if (!host) return;
-  const arr = getDivList();
-  const hasPlan = arr.some(s => (+s.annual||0) > 0 && (s.months||[]).length);
-  if (!hasPlan) { host.innerHTML = '<div style="font-size:11px;color:var(--ink-mute);">銘柄に年間予想配当と支払月を入力すると、ここに月別の「予定 vs 実績」が表示されます。</div>'; return; }
-  // 予定（円）
-  const plan = new Array(12).fill(0);
-  arr.forEach(s => {
-    const ms = (s.months||[]).filter(m => m>=1 && m<=12);
-    if (!ms.length || !(+s.annual)) return;
-    ms.forEach(m => { plan[m-1] += (+s.annual) / ms.length; });
-  });
-  // 実績（年間収支シート dividend行: 万円→円）。未入力月は「–」
+  const planAnnual = (typeof pfRows==='function') ? pfRows().reduce((s,r)=>s+r.dividend,0)*10000/10000 : 0; // 予想配当 年間（税引前・円）
+  if (!planAnnual) { host.innerHTML = '<div style="font-size:11px;color:var(--ink-mute);">上の「高配当株 管理」にポートフォリオを取り込むと、予想配当（予定）と実績の比較が表示されます。</div>'; return; }
   const b = (typeof getBudget === 'function') ? getBudget() : {};
   const divRow = budgetRowArr(b, 'dividend');
   const monthHasData = (m) => [...BUDGET_INCOME_ROWS, ...BUDGET_ALL_EXP].some(r => +budgetRowArr(b, r.key)[m] > 0);
   const man = v => (v/10000).toFixed(1);
-  let planTotal = 0, actTotal = 0, actTotalForRate = 0, planForRate = 0;
-  let cells = { plan:'', act:'', diff:'' };
+  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  let cells = '', actTotal = 0, nMonths = 0;
   for (let m = 0; m < 12; m++) {
-    const p = plan[m];
     const has = monthHasData(m);
     const a = has ? (+divRow[m]||0) * 10000 : null;
-    planTotal += p;
-    if (a != null) { actTotal += a; if (p>0 || a>0) { planForRate += p; actTotalForRate += a; } }
-    cells.plan += `<td class="bg-mtotal">${p ? man(p) : '–'}</td>`;
-    cells.act  += a == null
+    if (a != null) { actTotal += a; nMonths++; }
+    cells += a == null
       ? `<td class="bg-mtotal" style="color:var(--ink-mute);" title="この月のCSV/収支が未入力">未</td>`
       : `<td class="bg-mtotal" style="font-weight:700;color:var(--teal-deep);">${man(a)}</td>`;
-    const d = a == null ? null : a - p;
-    cells.diff += d == null ? '<td class="bg-mtotal">–</td>'
-      : `<td class="bg-mtotal" style="color:${d < 0 ? 'var(--rose)' : 'var(--green)'};">${d>=0?'+':''}${man(d)}</td>`;
   }
-  const rate = planForRate > 0 ? (actTotalForRate / planForRate * 100) : null;
-  const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  const annualized = nMonths ? actTotal * 12 / nMonths : 0;
+  const rate = (planAnnual > 0 && nMonths) ? annualized / planAnnual * 100 : null;
+  const planMonthlyAvg = planAnnual / 12;
+  const stat = (label,val,color)=>`<div style="background:var(--bg-subtle);border-radius:6px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-mute);font-weight:700;">${label}</div><div style="font-size:15px;font-weight:800;font-family:'JetBrains Mono',monospace;${color?`color:${color};`:''}">${val}</div></div>`;
   host.innerHTML = `
-    <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;">📅 月別 予定 vs 実績（万円）</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:10px;">
+      ${stat('予定（年間・税引前）', man(planAnnual)+'万')}
+      ${stat('実績（'+nMonths+'ヶ月累計）', man(actTotal)+'万','var(--teal-deep)')}
+      ${stat('実績 年換算', man(annualized)+'万')}
+      ${rate!=null?stat('達成率（年換算）', rate.toFixed(0)+'%', rate>=95?'var(--green)':rate>=80?'var(--amber)':'var(--rose)'):''}
+    </div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:6px;">
       <table class="bg-table" style="min-width:760px;">
-        <thead><tr><th class="bg-rowlabel">　</th>${months.map(m=>`<th>${m}</th>`).join('')}<th>年間</th></tr></thead>
+        <thead><tr><th class="bg-rowlabel">　</th>${months.map(m=>`<th>${m}</th>`).join('')}<th>累計</th></tr></thead>
         <tbody>
-          <tr><td class="bg-rowlabel">予定配当</td>${cells.plan}<td class="bg-avg">${man(planTotal)}</td></tr>
-          <tr><td class="bg-rowlabel">実績入金</td>${cells.act}<td class="bg-avg">${man(actTotal)}</td></tr>
-          <tr><td class="bg-rowlabel">差額</td>${cells.diff}<td class="bg-avg" style="color:${actTotal-planTotal<0?'var(--rose)':'var(--green)'};">${actTotal-planTotal>=0?'+':''}${man(actTotal-planTotal)}</td></tr>
+          <tr><td class="bg-rowlabel">実績入金（万）</td>${cells}<td class="bg-avg">${man(actTotal)}</td></tr>
         </tbody>
       </table>
     </div>
-    <div style="font-size:11.5px;margin-top:6px;color:var(--ink-soft);">
-      ${rate != null ? `達成率（CSV取込済み月のみで比較）: <b style="color:${rate>=95?'var(--green)':rate>=80?'var(--amber)':'var(--rose)'};">${rate.toFixed(0)}%</b>　` : ''}
-      <span style="font-size:10.5px;color:var(--ink-mute);">「未」=その月の年間収支シートが未入力（MF CSVを取り込むと実績が入ります）</span>
-    </div>`;
+    <div style="font-size:10.5px;margin-top:6px;color:var(--ink-mute);">「未」=その月の収支シートが未入力（MF CSVを取り込むと実績が入ります）。予定の月割めやす ${man(planMonthlyAvg)}万/月。<strong>月別の正確な予定</strong>は銘柄ごとの支払月データ取込後に対応します。</div>`;
 }
 
 /* ============================================================
@@ -2941,7 +2922,7 @@ function initHighDiv(){
     reader.onload=()=>{ try{
         const n=parseDivSheetCSV(String(reader.result||''));
         if(res) res.innerHTML = n? `<span style="color:var(--green);font-weight:700;">✅ ${n}銘柄を取り込みました</span>` : '<span style="color:var(--rose);">明細行が見つかりません（「管理シート」タブのCSVか確認してください）</span>';
-        renderHighDiv();
+        renderHighDiv(); renderDivCompare();
       }catch(err){ if(res) res.innerHTML='<span style="color:var(--rose);">取込エラー: '+err.message+'</span>'; }
       e.target.value=''; };
     reader.readAsText(f,'utf-8');
@@ -2954,9 +2935,9 @@ function initHighDiv(){
     if(!upd&&!add){ if(res) res.innerHTML='<span style="color:var(--rose);">銘柄行が見つかりません（株式・現物の表を貼ってください）</span>'; return; }
     let m = `<span style="color:var(--green);font-weight:700;">✅ 更新 ${upd} / 新規 ${add}</span>`;
     if(miss.length) m += `　<span style="color:var(--amber);">未マスター ${miss.length}件（${miss.join(', ')}）は業種・配当単価が未設定です</span>`;
-    if(res) res.innerHTML=m; if(ta) ta.value=''; renderHighDiv();
+    if(res) res.innerHTML=m; if(ta) ta.value=''; renderHighDiv(); renderDivCompare();
   });
-  renderHighDiv();
+  renderHighDiv(); renderDivCompare();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -3122,14 +3103,15 @@ document.addEventListener('DOMContentLoaded', () => { renderSpotEvents(); });
  *  ==================================== */
 const APP_MODE_KEY = 'sideFireAppMode';
 function setAppMode(mode) {
-  mode = (mode === 'sim') ? 'sim' : 'plan';
+  if (mode !== 'sim' && mode !== 'div') mode = 'plan';
   document.body.classList.toggle('mode-plan', mode === 'plan');
   document.body.classList.toggle('mode-sim',  mode === 'sim');
+  document.body.classList.toggle('mode-div',  mode === 'div');
   document.querySelectorAll('.app-mode-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.appmode === mode));
-  // アクティブな入力タブが現モードで非表示なら、先頭の表示タブへ
+  // アクティブな入力タブが現モードに属さなければ、そのモードの先頭タブへ（タブの無いモードは何もしない）
   const activeTab = document.querySelector('.tab.active');
-  if (!activeTab || activeTab.classList.contains(mode === 'plan' ? 'mode-sim' : 'mode-plan')) {
+  if (!activeTab || !activeTab.classList.contains('mode-' + mode)) {
     const firstVisible = document.querySelector('.tab.mode-' + mode);
     if (firstVisible) firstVisible.click();
   }
@@ -3137,6 +3119,7 @@ function setAppMode(mode) {
   // 表示切替後にグラフを再描画（display:none→表示でサイズが崩れるため）
   setTimeout(() => {
     [assetChart, cashflowChart, totalAssetChart, bucketChart].forEach(c => { try { c && c.resize(); } catch {} });
+    if (mode === 'div' && typeof renderHighDiv === 'function') renderHighDiv();
   }, 60);
 }
 document.querySelectorAll('.app-mode-btn').forEach(btn => {
