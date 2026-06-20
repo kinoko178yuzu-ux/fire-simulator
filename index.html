@@ -1864,6 +1864,25 @@ select:focus { border-color: var(--teal); }
           <button type="button" id="hdPasteBtn" style="width:100%;margin-top:6px;padding:8px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">貼付データで保有数・株価を更新</button>
           <div id="hdImportResult" style="font-size:11px;margin-top:6px;"></div>
         </details>
+        <details style="margin-bottom:10px;" id="hdEditorDetails">
+          <summary style="font-size:12px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">✏️ 銘柄の編集（業種・配当単価・支払月）</summary>
+          <div style="font-size:10.5px;color:var(--ink-mute);margin:6px 0 8px;">業種を選ぶと景気区分は自動。配当単価はIR BANK / Yahoo!で調べて入力（MFには配当データが無いため）。支払月はカンマ区切り（例：6,12）。</div>
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+            <label style="font-size:11px;color:var(--ink-soft);"><input type="checkbox" id="hdEditOnlyUnset"> 未設定のみ表示</label>
+          </div>
+          <div id="hdEditor" style="overflow-x:auto;"></div>
+          <div style="border-top:1px solid var(--border);margin-top:10px;padding-top:8px;">
+            <div style="font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">＋ 銘柄を手動で追加（MFにまだ無い購入直後など）</div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center;">
+              <input id="hdAddCode" placeholder="コード" style="width:70px;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">
+              <input id="hdAddName" placeholder="銘柄名" style="flex:1;min-width:110px;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">
+              <input id="hdAddShares" type="number" placeholder="株数" style="width:70px;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">
+              <input id="hdAddPrice" type="number" placeholder="株価" style="width:80px;font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">
+              <button type="button" id="hdAddBtn" style="padding:5px 12px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;">追加</button>
+            </div>
+            <div id="hdAddResult" style="font-size:11px;margin-top:5px;"></div>
+          </div>
+        </details>
         <input type="hidden" id="divPortfolioJson" value="{}">
         <div id="hdDashboard"></div>
       </div>
@@ -2764,6 +2783,9 @@ const HD_US_WHT = 0.10;      // 米国 源泉徴収（外国税額控除前）
 /** 銘柄コード→支払月（スプレッドシート集計タブから移行。新規銘柄は未設定でOK・後から編集可） */
 const HD_PAY_MONTHS = {"1343":[3,6,9,12],"1489":[2,5,8,11],"1723":[6,12],"1928":[4,10],"1951":[6,12],"1976":[6,12],"1980":[6,12],"2003":[6,12],"2124":[3],"2169":[3,9],"2296":[3,6,9,12],"2317":[6,12],"2391":[4,10],"2393":[6],"2659":[5],"3003":[3,9],"3076":[3,9],"3231":[6,12],"3333":[5,11],"3771":[6],"3817":[6,12],"3834":[6,12],"4008":[6,12],"4042":[6,12],"4248":[3,9],"4345":[6,12],"4401":[6,12],"4540":[6,12],"4641":[3,9],"4752":[6],"4832":[6,12],"5186":[6,12],"5334":[6,12],"5388":[6,12],"5464":[6,12],"6073":[6,12],"6345":[6,12],"6381":[6,12],"6432":[5],"6458":[6,12],"6539":[6],"6652":[6,12],"6785":[3,9],"7292":[6,12],"7438":[6,12],"7483":[6,12],"7723":[6,12],"7749":[6,12],"7820":[6,12],"7921":[2,8],"7931":[6,12],"7989":[3,9],"7994":[6,12],"8058":[6,12],"8130":[6,12],"8309":[6,12],"8584":[6,12],"8593":[6,12],"8725":[6,12],"9057":[6,12],"9069":[6,12],"9233":[6,12],"9303":[6,12],"9304":[6,12],"9364":[6,12],"9368":[6,12],"9381":[5,11],"9513":[6,12],"9769":[6,12],"9795":[6,12],"9986":[6,12],"208A":[3,6,9,12],"HDV":[3,6,9,12],"SPYD":[3,6,9,12],"VYM":[3,6,9,12]};
 function hdIsForeign(sector){ return /米国|米ドル|海外|外国/.test(sector||''); }
+/** 業種→景気感応度（スプレッドシート「設定」タブのルールを移行）。業種を選べば景気区分は自動 */
+const HD_SECTOR_CYC = {"水産・農林業":"ディフェンシブ","建設業":"景気敏感","不動産業":"景気敏感","非鉄金属":"景気敏感","鉱業":"景気敏感","サービス業":"ディフェンシブ","機械":"景気敏感","金属製品":"ディフェンシブ","情報・通信業":"ディフェンシブ","食料品":"ディフェンシブ","医薬品":"ディフェンシブ","陸運業":"ディフェンシブ","その他金融業":"景気敏感","小売業":"景気敏感","卸売業":"景気敏感","化学":"景気敏感","繊維製品":"景気敏感","電気機器":"ディフェンシブ","ガラス・土石製品":"景気敏感","証券、商品先物取引業":"景気敏感","輸送用機器":"ディフェンシブ","石油・石炭製品":"景気敏感","パルプ・紙":"景気敏感","精密機器":"景気敏感","ゴム製品":"景気敏感","鉄鋼":"景気敏感","銀行業":"景気敏感","保険業":"景気敏感","その他製品":"ディフェンシブ","倉庫・運輸関連業":"ディフェンシブ","海運業":"景気敏感","空運業":"景気敏感","電気・ガス業":"景気敏感","ETF・他":"ディフェンシブ","米国ETF":"ディフェンシブ","米国個別株":"景気敏感"};
+const HD_SECTORS = Object.keys(HD_SECTOR_CYC);
 /** 配当（円）の税引後。foreign=米国系は源泉10%控除後に国内課税 */
 function hdAfterTax(gross, foreign){ const afterUS = foreign ? gross*(1-HD_US_WHT) : gross; return afterUS*(1-HD_JP_TAX); }
 
@@ -2860,6 +2882,60 @@ function renderHdTop20(){
   const s=sel.value;
   const list=hdLastRows.filter(r=>s==='__all__'||r.sector===s).sort((a,b)=>b.dividend-a.dividend).slice(0,20);
   body.innerHTML=list.map((r,i)=>`<tr><td style="text-align:right;color:var(--ink-mute);">${i+1}</td><td>${r.code}</td><td style="text-align:left;">${r.name}</td><td style="text-align:left;color:var(--ink-mute);font-size:10px;">${r.sector}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">${yenComma(r.dividend)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--ink-mute);">該当なし</td></tr>';
+}
+
+/** 銘柄エディタ（業種・配当単価・支払月を編集／景気区分は業種から自動） */
+function renderHdEditor(){
+  const host=document.getElementById('hdEditor'); if(!host) return;
+  const p=getPortfolio(); const codes=Object.keys(p);
+  if(!codes.length){ host.innerHTML='<div style="font-size:11px;color:var(--ink-mute);">銘柄がありません。先にCSV取込またはMF貼付をしてください。</div>'; return; }
+  const isUnset=(s)=>!s.sector||s.sector==='未設定'||!(+s.dps>0);
+  const onlyUnset=document.getElementById('hdEditOnlyUnset')&&document.getElementById('hdEditOnlyUnset').checked;
+  let list=codes.map(c=>({code:c,s:p[c]}));
+  list.sort((a,b)=>{ const ua=isUnset(a.s),ub=isUnset(b.s); if(ua!==ub) return ua?-1:1; return a.code<b.code?-1:1; });
+  if(onlyUnset) list=list.filter(x=>isUnset(x.s));
+  if(!list.length){ host.innerHTML='<div style="font-size:11px;color:var(--ink-mute);">未設定の銘柄はありません。</div>'; return; }
+  const secOpts=(cur)=>['<option value="">（未設定）</option>'].concat(HD_SECTORS.map(s=>`<option value="${s}"${s===cur?' selected':''}>${s}</option>`)).join('');
+  const rows=list.map(({code,s})=>{
+    const dps=Math.round(+s.dps||0);
+    const months=(Array.isArray(s.months)&&s.months.length)?s.months.join(','):'';
+    const warn=isUnset(s)?'background:#fff7ed;':'';
+    const curSec=(s.sector&&s.sector!=='未設定')?s.sector:'';
+    return `<tr data-code="${code}" style="${warn}">
+      <td style="font-family:'JetBrains Mono',monospace;">${code}</td>
+      <td style="text-align:left;font-size:10.5px;">${s.name||''}</td>
+      <td><select class="hd-e-sector" style="font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:3px;font-family:inherit;">${secOpts(curSec)}</select></td>
+      <td style="font-size:10.5px;color:var(--ink-mute);" class="hd-e-cyc">${s.cyc||'–'}</td>
+      <td><input class="hd-e-dps" type="number" value="${dps||''}" placeholder="円/株" style="width:72px;font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;text-align:right;font-family:inherit;"></td>
+      <td><input class="hd-e-months" value="${months}" placeholder="6,12" style="width:60px;font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;font-family:inherit;"></td>
+      ${hdLinks(code)}</tr>`;
+  }).join('');
+  host.innerHTML=`<table class="bg-table" style="min-width:560px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>景気</th><th>配当単価</th><th>支払月</th><th>IR</th><th>Y!</th></tr></thead><tbody>${rows}</tbody></table>`;
+  host.querySelectorAll('tr[data-code]').forEach(tr=>{
+    const code=tr.dataset.code;
+    const sec=tr.querySelector('.hd-e-sector'), dpsEl=tr.querySelector('.hd-e-dps'), monEl=tr.querySelector('.hd-e-months');
+    const commit=()=>{ const pp=getPortfolio(); if(!pp[code]) return;
+      pp[code].sector=sec.value||'未設定';
+      pp[code].cyc=HD_SECTOR_CYC[sec.value]||'';
+      pp[code].dps=+dpsEl.value||0;
+      pp[code].months=monEl.value.split(',').map(x=>parseInt(x.trim(),10)).filter(x=>x>=1&&x<=12);
+      setPortfolio(pp); renderHighDiv(); renderDivCompare(); renderHdEditor();
+    };
+    sec.addEventListener('change',commit); dpsEl.addEventListener('change',commit); monEl.addEventListener('change',commit);
+  });
+}
+/** 手動で銘柄を追加 */
+function hdManualAdd(){
+  const codeEl=document.getElementById('hdAddCode'),nameEl=document.getElementById('hdAddName'),shEl=document.getElementById('hdAddShares'),prEl=document.getElementById('hdAddPrice'),res=document.getElementById('hdAddResult');
+  const code=(codeEl.value||'').trim().toUpperCase();
+  if(!HD_CODE_RE.test(code)){ if(res) res.innerHTML='<span style="color:var(--rose);">コードを正しく入力してください（例 1343 / VYM）</span>'; return; }
+  const shares=+shEl.value||0, price=+prEl.value||0;
+  const p=getPortfolio();
+  if(!p[code]) p[code]={name:(nameEl.value||'').trim()||code,sector:'未設定',cyc:'',shares,cost:price,price,dps:0,months:HD_PAY_MONTHS[code]||[]};
+  else { if(shares)p[code].shares=shares; if(price){p[code].price=price; if(!p[code].cost)p[code].cost=price;} if((nameEl.value||'').trim())p[code].name=nameEl.value.trim(); }
+  setPortfolio(p); renderHighDiv(); renderDivCompare(); renderHdEditor();
+  if(res) res.innerHTML=`<span style="color:var(--green);font-weight:700;">✅ ${code} を追加。下の表で業種・配当単価を設定してください。</span>`;
+  codeEl.value=nameEl.value=shEl.value=prEl.value='';
 }
 
 /** ダッシュボード描画 */
@@ -2994,7 +3070,7 @@ function initHighDiv(){
     reader.onload=()=>{ try{
         const n=parseDivSheetCSV(String(reader.result||''));
         if(res) res.innerHTML = n? `<span style="color:var(--green);font-weight:700;">✅ ${n}銘柄を取り込みました</span>` : '<span style="color:var(--rose);">明細行が見つかりません（「管理シート」タブのCSVか確認してください）</span>';
-        renderHighDiv(); renderDivCompare();
+        renderHighDiv(); renderDivCompare(); renderHdEditor();
       }catch(err){ if(res) res.innerHTML='<span style="color:var(--rose);">取込エラー: '+err.message+'</span>'; }
       e.target.value=''; };
     reader.readAsText(f,'utf-8');
@@ -3007,9 +3083,13 @@ function initHighDiv(){
     if(!upd&&!add){ if(res) res.innerHTML='<span style="color:var(--rose);">銘柄行が見つかりません（株式・現物の表を貼ってください）</span>'; return; }
     let m = `<span style="color:var(--green);font-weight:700;">✅ 更新 ${upd} / 新規 ${add}</span>`;
     if(miss.length) m += `　<span style="color:var(--amber);">未マスター ${miss.length}件（${miss.join(', ')}）は業種・配当単価が未設定です</span>`;
-    if(res) res.innerHTML=m; if(ta) ta.value=''; renderHighDiv(); renderDivCompare();
+    if(res) res.innerHTML=m; if(ta) ta.value=''; renderHighDiv(); renderDivCompare(); renderHdEditor();
   });
-  renderHighDiv(); renderDivCompare();
+  const addBtn=document.getElementById('hdAddBtn');
+  if(addBtn) addBtn.addEventListener('click', hdManualAdd);
+  const onlyUnset=document.getElementById('hdEditOnlyUnset');
+  if(onlyUnset) onlyUnset.addEventListener('change', renderHdEditor);
+  renderHighDiv(); renderDivCompare(); renderHdEditor();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -3264,6 +3344,7 @@ function loadData() {
     if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
     if (typeof renderDivStocks === 'function') { renderDivStocks(); renderDivCompare(); }
     if (typeof renderHighDiv === 'function') renderHighDiv();
+    if (typeof renderHdEditor === 'function') renderHdEditor();
     if (typeof renderAssetHistory === 'function') renderAssetHistory();
     calculate(); showToast('読み込みました');
   } catch(e) { showToast('読込に失敗'); }
@@ -3360,6 +3441,7 @@ function applyAllData(data) {
     if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
     if (typeof renderDivStocks === 'function') { renderDivStocks(); renderDivCompare(); }
     if (typeof renderHighDiv === 'function') renderHighDiv();
+    if (typeof renderHdEditor === 'function') renderHdEditor();
     if (typeof renderAssetHistory === 'function') renderAssetHistory();
     calculate();
   } finally {
