@@ -1843,6 +1843,26 @@ select:focus { border-color: var(--teal); }
         <div id="budgetSheet"></div>
       </div>
 
+      <!-- ★NEW 高配当株 管理（ポートフォリオ・ダッシュボード） -->
+      <div class="card mode-plan" id="highDivCard">
+        <h3><span class="dot"></span>🏆 高配当株 管理</h3>
+        <div style="font-size:11.5px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
+          スプレッドシートの高配当株管理をアプリに移行。<strong>初回だけ「管理シート」CSVを取込</strong>すれば、銘柄・業種・配当単価・景気区分がアプリに保存されます。以後は<strong>MFポートフォリオ貼付で保有数・株価だけ更新</strong>すれば、配当金・評価額・利回りを自動再計算します。
+        </div>
+        <details style="margin-bottom:10px;" id="hdImportDetails">
+          <summary style="font-size:12px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📥 データの取込（CSV / MF貼付）</summary>
+          <div style="font-size:11px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">① 初回移行：Googleシート「管理シート」をCSVエクスポートして取込</div>
+          <input type="file" id="hdCsvInput" accept=".csv,text/csv" style="font-size:11px;margin-bottom:4px;">
+          <div style="font-size:10.5px;color:var(--ink-mute);margin-bottom:10px;">ファイル→ダウンロード→カンマ区切り(.csv) で出力したものを選択。業種・配当単価・景気区分も取り込みます。</div>
+          <div style="font-size:11px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">② 以後の更新：MFポートフォリオ「株式（現物）」表を貼り付け</div>
+          <textarea id="hdPasteArea" rows="4" placeholder="1343&#9;NFJ-REIT&#9;215&#9;1,886&#9;1,914&#9;411,510円 …（複数口座OK・米国ETF対応・自動で合算）" style="width:100%;font-size:11px;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:var(--bg-subtle);padding:8px;box-sizing:border-box;"></textarea>
+          <button type="button" id="hdPasteBtn" style="width:100%;margin-top:6px;padding:8px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">貼付データで保有数・株価を更新</button>
+          <div id="hdImportResult" style="font-size:11px;margin-top:6px;"></div>
+        </details>
+        <input type="hidden" id="divPortfolioJson" value="{}">
+        <div id="hdDashboard"></div>
+      </div>
+
       <!-- ★NEW 配当管理（予定 vs 実績） -->
       <div class="card mode-plan" id="dividendCard">
         <h3><span class="dot"></span>💰 配当管理（予定 vs 実績入金）</h3>
@@ -2743,8 +2763,205 @@ function renderDivCompare() {
     </div>`;
 }
 
+/* ============================================================
+ *  ★NEW 高配当株 管理（ポートフォリオ・ダッシュボード）
+ *  divPortfolioJson = { code: {name,sector,cyc,shares,cost,price,dps} }
+ *    評価額=price*shares / 購入額=cost*shares / 配当金=round(dps*shares)
+ *    ※dpsは端数込みで保持 → 株数を更新しても配当金が再現できる
+ *  ========================================================== */
+function getPortfolio(){ try{ const o=JSON.parse(document.getElementById('divPortfolioJson').value||'{}'); return (o&&typeof o==='object')?o:{}; }catch{ return {}; } }
+function setPortfolio(p){ document.getElementById('divPortfolioJson').value=JSON.stringify(p); if(typeof debouncedSave==='function'&&!isApplyingCloud) debouncedSave(); }
+function hdNum(s){ return parseInt(String(s==null?'':s).replace(/[^0-9\-]/g,''),10)||0; }
+const HD_CODE_RE = /^(\d{3,4}[A-Z]?|[A-Z]{2,5})$/;
+
+/** 管理シートCSVの明細表（75行）を解析 → ポートフォリオへ保存。戻り=取込件数 */
+function parseDivSheetCSV(text){
+  const rows = parseCSV(text);
+  const p = getPortfolio(); let n=0;
+  for(const r of rows){
+    const c = r.map(x=>(x||'').trim()).filter(x=>x!=='');
+    if(c.length<18) continue;            // 明細行は20列前後。Top20等の短い行を除外
+    if(!/^\d+$/.test(c[0])) continue;    // c[0]=No(数字)
+    if(!HD_CODE_RE.test(c[1])) continue; // c[1]=コード
+    const shares=hdNum(c[5]); if(!shares) continue;
+    // c: 0No 1code 2name 3業種割合% 4業種 5保有数 6取得単価 7購入額 8株価 9評価額 10割合 11損益 12(%) 13配当単価 14配当金 …末尾=景気区分
+    const purchase=hdNum(c[7]), evalv=hdNum(c[9]), dividend=hdNum(c[14]);
+    const cyc = c.find(x=>x==='景気敏感'||x==='ディフェンシブ') || '';
+    // price/cost/dps は端数込みで保持（購入額・評価額・配当金を完全再現＝合計が一致）
+    p[c[1]] = { name:c[2], sector:c[4]||'その他', cyc,
+      shares, cost: purchase/shares, price: evalv/shares, dps: dividend/shares };
+    n++;
+  }
+  setPortfolio(p); return n;
+}
+
+/** MFポートフォリオ貼付 → 保有数・株価・取得単価のみ更新（業種/配当単価/景気区分は保持）
+ *  円換算で統一: 評価額・評価損益（円）から price/cost を逆算 → 米国ETFのドル建てにも対応
+ *  同一コードが複数口座にあれば合算。戻り=更新/新規/未マスター */
+function refreshFromMF(text){
+  const agg={};
+  for(const raw of text.split(/\r?\n/)){
+    const ln=raw.replace(/\r/,''); if(!ln.trim()) continue;
+    const cols = (ln.includes('\t') ? ln.split('\t') : ln.split(/\s{2,}/)).map(x=>x.trim());
+    if(cols.length<8) continue;
+    const code=cols[0]; if(!HD_CODE_RE.test(code)) continue;
+    const shares=hdNum(cols[2]); if(!shares) continue;
+    const evalv=hdNum(cols[5]);          // 評価額（円）
+    const pl=hdNum(cols[7]);             // 評価損益（円）
+    const purchase=evalv-pl;            // 購入額（円）
+    if(!agg[code]) agg[code]={name:cols[1]||'',shares:0,evalSum:0,purSum:0};
+    agg[code].shares+=shares; agg[code].evalSum+=evalv; agg[code].purSum+=purchase;
+  }
+  const p=getPortfolio(); let upd=0,add=0; const miss=[];
+  Object.keys(agg).forEach(code=>{
+    const a=agg[code]; const sh=a.shares;
+    const price = sh? Math.round(a.evalSum/sh) : 0;
+    const cost  = sh? Math.round(a.purSum/sh) : 0;
+    if(p[code]){ p[code].shares=sh; p[code].price=price; p[code].cost=cost; if(a.name) p[code].name=a.name; upd++; }
+    else { p[code]={name:a.name,sector:'未設定',cyc:'',shares:sh,cost,price,dps:0}; add++; miss.push(code); }
+  });
+  setPortfolio(p); return {upd,add,miss};
+}
+
+/** 計算済み明細行の配列を返す */
+function pfRows(){
+  const p=getPortfolio();
+  return Object.keys(p).map(code=>{
+    const s=p[code], shares=+s.shares||0;
+    const evalv=Math.round((+s.price||0)*shares);
+    const purchase=Math.round((+s.cost||0)*shares);
+    const dividend=Math.round((+s.dps||0)*shares);
+    return { code, name:s.name||code, sector:s.sector||'その他', cyc:s.cyc||'',
+      shares, price:+s.price||0, cost:+s.cost||0, dps:+s.dps||0,
+      evalv, purchase, dividend, pl:evalv-purchase,
+      ynow: evalv? dividend/evalv*100 : 0, ycost: purchase? dividend/purchase*100 : 0 };
+  });
+}
+
+let hdCharts = { sector:null, cyc:null, yield:null };
+function destroyHdCharts(){ Object.keys(hdCharts).forEach(k=>{ if(hdCharts[k]){ hdCharts[k].destroy(); hdCharts[k]=null; } }); }
+
+/** ダッシュボード描画 */
+function renderHighDiv(){
+  const host=document.getElementById('hdDashboard'); if(!host) return;
+  const rows=pfRows();
+  if(!rows.length){
+    destroyHdCharts();
+    host.innerHTML='<div style="font-size:11.5px;color:var(--ink-mute);padding:8px;">まだデータがありません。上の「データの取込」から、Googleシート「管理シート」のCSVを取り込んでください。</div>';
+    return;
+  }
+  const sum=(f)=>rows.reduce((s,r)=>s+f(r),0);
+  const totalEval=sum(r=>r.evalv), totalPur=sum(r=>r.purchase), totalDiv=sum(r=>r.dividend);
+  const totalPL=totalEval-totalPur;
+  const plPct = totalPur? totalPL/totalPur*100 : 0;
+  const yieldCost = totalPur? totalDiv/totalPur*100 : 0;   // 取得ベース（シートの「配当利回り」と一致）
+  const yieldNow  = totalEval? totalDiv/totalEval*100 : 0; // 時価ベース
+  const nisaRatio = (typeof inputs!=='undefined' && inputs.divNisaRatio) ? (+inputs.divNisaRatio.value||0)/100 : 0;
+  const divAfterTax = Math.round(totalDiv * (1 - (1-nisaRatio)*0.20315));
+
+  // 業種集計（評価額）
+  const bySector={}; rows.forEach(r=>{ bySector[r.sector]=(bySector[r.sector]||0)+r.evalv; });
+  const sectors=Object.keys(bySector).sort((a,b)=>bySector[b]-bySector[a]);
+  // 景気区分
+  const cyc={'景気敏感':0,'ディフェンシブ':0,'未分類':0};
+  rows.forEach(r=>{ cyc[r.cyc==='景気敏感'?'景気敏感':r.cyc==='ディフェンシブ'?'ディフェンシブ':'未分類']+=r.evalv; });
+  // 利回り別ヒストグラム
+  const buckets=['~1.0','~1.5','~2.0','~2.5','~3.0','~3.5','~4.0','~4.5','~5.0','~5.5','~6.0','6.0以上'];
+  const hist=new Array(buckets.length).fill(0);
+  rows.forEach(r=>{ const y=r.ynow; let i=Math.floor((y-0.0001)/0.5); if(y>=6) i=11; if(i<0)i=0; if(i>11)i=11; hist[i]++; });
+  // Top20
+  const top=[...rows].sort((a,b)=>b.dividend-a.dividend).slice(0,20);
+
+  const card=(label,val,sub,color)=>`<div style="background:var(--bg-subtle);border:1px solid var(--border-soft);border-radius:8px;padding:10px 12px;">
+    <div style="font-size:10.5px;color:var(--ink-mute);font-weight:700;">${label}</div>
+    <div style="font-size:18px;font-weight:800;color:${color||'var(--ink)'};font-family:'JetBrains Mono',monospace;">${val}</div>
+    ${sub?`<div style="font-size:10.5px;color:var(--ink-mute);">${sub}</div>`:''}</div>`;
+
+  const topRows=top.map((r,i)=>`<tr><td style="text-align:right;color:var(--ink-mute);">${i+1}</td><td>${r.code}</td><td style="text-align:left;">${r.name}</td><td style="text-align:left;color:var(--ink-mute);font-size:10px;">${r.sector}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">${yenComma(r.dividend)}</td></tr>`).join('');
+
+  const allRows=[...rows].sort((a,b)=>b.evalv-a.evalv).map(r=>{
+    const w=totalEval? (r.evalv/totalEval*100):0;
+    const plc = r.pl>=0?'var(--green)':'var(--rose)';
+    return `<tr><td>${r.code}</td><td style="text-align:left;">${r.name}</td><td style="text-align:left;color:var(--ink-mute);font-size:10px;">${r.sector}</td>
+      <td style="text-align:right;">${r.shares.toLocaleString()}</td>
+      <td style="text-align:right;">${yenComma(r.cost)}</td>
+      <td style="text-align:right;">${yenComma(r.price)}</td>
+      <td style="text-align:right;">${yenComma(r.evalv)}</td>
+      <td style="text-align:right;">${w.toFixed(2)}%</td>
+      <td style="text-align:right;color:${plc};">${r.pl>=0?'+':''}${yenComma(r.pl)}</td>
+      <td style="text-align:right;">${yenComma(r.dps)}</td>
+      <td style="text-align:right;font-weight:700;">${yenComma(r.dividend)}</td>
+      <td style="text-align:right;">${r.ynow.toFixed(2)}%</td>
+      <td style="text-align:right;color:var(--ink-mute);">${r.ycost.toFixed(2)}%</td></tr>`;
+  }).join('');
+
+  host.innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px;">
+      ${card('保有資産額（評価額）', yenComma(totalEval)+'円')}
+      ${card('購入額', yenComma(totalPur)+'円')}
+      ${card('損益額', (totalPL>=0?'+':'')+yenComma(totalPL)+'円', `( ${plPct>=0?'+':''}${plPct.toFixed(2)}% )`, totalPL>=0?'var(--green)':'var(--rose)')}
+      ${card('配当利回り（取得）', yieldCost.toFixed(2)+'%', `時価 ${yieldNow.toFixed(2)}%`)}
+      ${card('年間配当金（税引後）', yenComma(divAfterTax)+'円', `税引前 ${yenComma(totalDiv)}円・NISA${(nisaRatio*100).toFixed(0)}%`, 'var(--teal-deep)')}
+      ${card('銘柄数', rows.length+'')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+      <div><div style="font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">業種割合（評価額）</div><div style="position:relative;height:${Math.max(sectors.length*18,160)}px;"><canvas id="hdSectorChart"></canvas></div></div>
+      <div>
+        <div style="font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">景気敏感 / ディフェンシブ</div><div style="position:relative;height:150px;"><canvas id="hdCycChart"></canvas></div>
+        <div style="font-size:11px;font-weight:700;color:var(--ink-soft);margin:10px 0 4px;">銘柄数（利回り別）</div><div style="position:relative;height:150px;"><canvas id="hdYieldChart"></canvas></div>
+      </div>
+    </div>
+    <details style="margin-bottom:10px;"><summary style="font-size:12px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">🏅 配当金 Top20</summary>
+      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:420px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種</th><th>配当金</th></tr></thead><tbody>${topRows}</tbody></table></div>
+    </details>
+    <details><summary style="font-size:12px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📋 全銘柄（${rows.length}）</summary>
+      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:880px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>保有数</th><th>取得単価</th><th>株価</th><th>評価額</th><th>割合</th><th>損益</th><th>配当単価</th><th>配当金</th><th>利回り時価</th><th>利回り取得</th></tr></thead><tbody>${allRows}</tbody></table></div>
+    </details>`;
+
+  // チャート
+  if(typeof Chart==='undefined') return;
+  destroyHdCharts();
+  const COL=['#0d6e6e','#d97706','#16a34a','#b8413d','#8a5cf6','#0891b2','#ca8a04','#db2777','#65a30d','#9a8c70','#64748b','#e07a5f','#3d8361','#7c3aed','#ef4444','#14b8a6','#f59e0b','#6366f1'];
+  const sc=document.getElementById('hdSectorChart');
+  if(sc) hdCharts.sector=new Chart(sc.getContext('2d'),{type:'bar',data:{labels:sectors,datasets:[{data:sectors.map(s=>+(bySector[s]/totalEval*100).toFixed(1)),backgroundColor:sectors.map((_,i)=>COL[i%COL.length])}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed.x}%（${yenComma(bySector[c.label])}円）`}}},scales:{x:{ticks:{font:{size:9},callback:v=>v+'%'}},y:{ticks:{font:{size:9}}}}}});
+  const cc=document.getElementById('hdCycChart');
+  if(cc) hdCharts.cyc=new Chart(cc.getContext('2d'),{type:'doughnut',data:{labels:['景気敏感','ディフェンシブ','未分類'].filter(k=>cyc[k]>0),datasets:[{data:['景気敏感','ディフェンシブ','未分類'].filter(k=>cyc[k]>0).map(k=>cyc[k]),backgroundColor:['#d97706','#0d6e6e','#94a3b8']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}},tooltip:{callbacks:{label:c=>{const t=c.dataset.data.reduce((s,v)=>s+v,0);return `${c.label}: ${(c.parsed/t*100).toFixed(0)}%`;}}}}}});
+  const yc=document.getElementById('hdYieldChart');
+  if(yc) hdCharts.yield=new Chart(yc.getContext('2d'),{type:'bar',data:{labels:buckets,datasets:[{data:hist,backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:8}}},y:{ticks:{font:{size:9},stepSize:5}}}}});
+}
+function yenComma(n){ return Math.round(+n||0).toLocaleString(); }
+
+/** 取込UIの初期化 */
+function initHighDiv(){
+  const csv=document.getElementById('hdCsvInput');
+  const res=document.getElementById('hdImportResult');
+  if(csv) csv.addEventListener('change',(e)=>{
+    const f=e.target.files&&e.target.files[0]; if(!f) return;
+    const reader=new FileReader();
+    reader.onload=()=>{ try{
+        const n=parseDivSheetCSV(String(reader.result||''));
+        if(res) res.innerHTML = n? `<span style="color:var(--green);font-weight:700;">✅ ${n}銘柄を取り込みました</span>` : '<span style="color:var(--rose);">明細行が見つかりません（「管理シート」タブのCSVか確認してください）</span>';
+        renderHighDiv();
+      }catch(err){ if(res) res.innerHTML='<span style="color:var(--rose);">取込エラー: '+err.message+'</span>'; }
+      e.target.value=''; };
+    reader.readAsText(f,'utf-8');
+  });
+  const btn=document.getElementById('hdPasteBtn');
+  if(btn) btn.addEventListener('click',()=>{
+    const ta=document.getElementById('hdPasteArea'); const txt=ta?ta.value:'';
+    if(!txt.trim()){ if(res) res.innerHTML='<span style="color:var(--rose);">貼り付けが空です</span>'; return; }
+    const {upd,add,miss}=refreshFromMF(txt);
+    if(!upd&&!add){ if(res) res.innerHTML='<span style="color:var(--rose);">銘柄行が見つかりません（株式・現物の表を貼ってください）</span>'; return; }
+    let m = `<span style="color:var(--green);font-weight:700;">✅ 更新 ${upd} / 新規 ${add}</span>`;
+    if(miss.length) m += `　<span style="color:var(--amber);">未マスター ${miss.length}件（${miss.join(', ')}）は業種・配当単価が未設定です</span>`;
+    if(res) res.innerHTML=m; if(ta) ta.value=''; renderHighDiv();
+  });
+  renderHighDiv();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   renderDivStocks(); renderDivCompare();
+  initHighDiv();
   const addBtn = document.getElementById('divAddBtn');
   if (addBtn) addBtn.addEventListener('click', () => {
     const a = getDivList(); a.push({ name:'', shares:0, annual:0, months:[] }); setDivList(a);
@@ -2829,7 +3046,7 @@ const INPUT_IDS = [
   'monthlyInvest','bonusInvest','returnAcc','returnRet','volatility','nisaRatio',
   'divGrowth','divYield','divNisaRatio',
   'monthlyLifeExHouse','annualSpecial','sideIncomeGross','sideExpenseRatio','sideIncomeEndAge','inflation',
-  'budgetSheetJson','dividendListJson','assetHistoryJson',
+  'budgetSheetJson','dividendListJson','divPortfolioJson','assetHistoryJson',
   'loanBalance','loanRate','loanYears','loanMonthly','loanBonus',
   'taxCreditYears','taxCreditAmount','loanPayoff','payoffTiming','payoffCustomYear',
   'child1Path','child2Path',
@@ -2991,6 +3208,7 @@ function loadData() {
     if (typeof renderSpotEvents === 'function') renderSpotEvents();
     if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
     if (typeof renderDivStocks === 'function') { renderDivStocks(); renderDivCompare(); }
+    if (typeof renderHighDiv === 'function') renderHighDiv();
     if (typeof renderAssetHistory === 'function') renderAssetHistory();
     calculate(); showToast('読み込みました');
   } catch(e) { showToast('読込に失敗'); }
@@ -3086,6 +3304,7 @@ function applyAllData(data) {
     if (typeof renderSpotEvents === 'function') renderSpotEvents();  // ライフイベントリストを再描画
     if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
     if (typeof renderDivStocks === 'function') { renderDivStocks(); renderDivCompare(); }
+    if (typeof renderHighDiv === 'function') renderHighDiv();
     if (typeof renderAssetHistory === 'function') renderAssetHistory();
     calculate();
   } finally {
