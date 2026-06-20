@@ -2706,42 +2706,46 @@ function mergePortfolio(parsed) {
 function renderDivCompare() {
   const host = document.getElementById('divCompare');
   if (!host) return;
-  const planAnnual = (typeof pfRows==='function') ? pfRows().reduce((s,r)=>s+r.dividend,0)*10000/10000 : 0; // 予想配当 年間（税引前・円）
-  if (!planAnnual) { host.innerHTML = '<div style="font-size:11px;color:var(--ink-mute);">上の「高配当株 管理」にポートフォリオを取り込むと、予想配当（予定）と実績の比較が表示されます。</div>'; return; }
+  const rows = (typeof pfRows==='function') ? pfRows() : [];
+  const planAnnualNet = rows.reduce((s,r)=>s+r.net,0);     // 予想配当 年間（税引後・円）
+  if (!planAnnualNet) { host.innerHTML = '<div style="font-size:11px;color:var(--ink-mute);">上の「高配当株 管理」にポートフォリオを取り込むと、予想配当（予定）と実績の比較が表示されます。</div>'; return; }
+  const planM = pfMonthly(rows).net;                        // 月別 予定（税引後・円）
   const b = (typeof getBudget === 'function') ? getBudget() : {};
   const divRow = budgetRowArr(b, 'dividend');
   const monthHasData = (m) => [...BUDGET_INCOME_ROWS, ...BUDGET_ALL_EXP].some(r => +budgetRowArr(b, r.key)[m] > 0);
   const man = v => (v/10000).toFixed(1);
   const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
-  let cells = '', actTotal = 0, nMonths = 0;
+  let cPlan='', cAct='', cDiff='', actTotal=0, planForMonths=0, nMonths=0;
   for (let m = 0; m < 12; m++) {
+    const p = planM[m];
     const has = monthHasData(m);
     const a = has ? (+divRow[m]||0) * 10000 : null;
-    if (a != null) { actTotal += a; nMonths++; }
-    cells += a == null
-      ? `<td class="bg-mtotal" style="color:var(--ink-mute);" title="この月のCSV/収支が未入力">未</td>`
-      : `<td class="bg-mtotal" style="font-weight:700;color:var(--teal-deep);">${man(a)}</td>`;
+    if (a != null) { actTotal += a; planForMonths += p; nMonths++; }
+    cPlan += `<td class="bg-mtotal">${p? man(p):'–'}</td>`;
+    cAct  += a == null ? `<td class="bg-mtotal" style="color:var(--ink-mute);" title="この月のCSV/収支が未入力">未</td>`
+                       : `<td class="bg-mtotal" style="font-weight:700;color:var(--teal-deep);">${man(a)}</td>`;
+    const d = a==null? null : a-p;
+    cDiff += d==null ? '<td class="bg-mtotal">–</td>' : `<td class="bg-mtotal" style="color:${d<0?'var(--rose)':'var(--green)'};">${d>=0?'+':''}${man(d)}</td>`;
   }
-  const annualized = nMonths ? actTotal * 12 / nMonths : 0;
-  const rate = (planAnnual > 0 && nMonths) ? annualized / planAnnual * 100 : null;
-  const planMonthlyAvg = planAnnual / 12;
+  const rate = planForMonths>0 ? actTotal/planForMonths*100 : null;
   const stat = (label,val,color)=>`<div style="background:var(--bg-subtle);border-radius:6px;padding:8px 10px;"><div style="font-size:10px;color:var(--ink-mute);font-weight:700;">${label}</div><div style="font-size:15px;font-weight:800;font-family:'JetBrains Mono',monospace;${color?`color:${color};`:''}">${val}</div></div>`;
   host.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:10px;">
-      ${stat('予定（年間・税引前）', man(planAnnual)+'万')}
+      ${stat('予定（年間・税引後）', man(planAnnualNet)+'万')}
       ${stat('実績（'+nMonths+'ヶ月累計）', man(actTotal)+'万','var(--teal-deep)')}
-      ${stat('実績 年換算', man(annualized)+'万')}
-      ${rate!=null?stat('達成率（年換算）', rate.toFixed(0)+'%', rate>=95?'var(--green)':rate>=80?'var(--amber)':'var(--rose)'):''}
+      ${rate!=null?stat('達成率（取込済み月）', rate.toFixed(0)+'%', rate>=95?'var(--green)':rate>=80?'var(--amber)':'var(--rose)'):''}
     </div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:6px;">
       <table class="bg-table" style="min-width:760px;">
         <thead><tr><th class="bg-rowlabel">　</th>${months.map(m=>`<th>${m}</th>`).join('')}<th>累計</th></tr></thead>
         <tbody>
-          <tr><td class="bg-rowlabel">実績入金（万）</td>${cells}<td class="bg-avg">${man(actTotal)}</td></tr>
+          <tr><td class="bg-rowlabel">予定（税引後・万）</td>${cPlan}<td class="bg-avg">${man(planAnnualNet)}</td></tr>
+          <tr><td class="bg-rowlabel">実績入金（万）</td>${cAct}<td class="bg-avg">${man(actTotal)}</td></tr>
+          <tr><td class="bg-rowlabel">差額（万）</td>${cDiff}<td class="bg-avg" style="color:${actTotal-planForMonths<0?'var(--rose)':'var(--green)'};">${actTotal-planForMonths>=0?'+':''}${man(actTotal-planForMonths)}</td></tr>
         </tbody>
       </table>
     </div>
-    <div style="font-size:10.5px;margin-top:6px;color:var(--ink-mute);">「未」=その月の収支シートが未入力（MF CSVを取り込むと実績が入ります）。予定の月割めやす ${man(planMonthlyAvg)}万/月。<strong>月別の正確な予定</strong>は銘柄ごとの支払月データ取込後に対応します。</div>`;
+    <div style="font-size:10.5px;margin-top:6px;color:var(--ink-mute);">予定＝ポートフォリオの予想配当（税引後）を支払月で配分。「未」＝その月の収支シートが未入力（MF CSV取込で実績が入ります）。達成率は取込済み月の予定合計に対する実績。</div>`;
 }
 
 /* ============================================================
@@ -2754,6 +2758,13 @@ function getPortfolio(){ try{ const o=JSON.parse(document.getElementById('divPor
 function setPortfolio(p){ document.getElementById('divPortfolioJson').value=JSON.stringify(p); if(typeof debouncedSave==='function'&&!isApplyingCloud) debouncedSave(); }
 function hdNum(s){ return parseInt(String(s==null?'':s).replace(/[^0-9\-]/g,''),10)||0; }
 const HD_CODE_RE = /^(\d{3,4}[A-Z]?|[A-Z]{2,5})$/;
+const HD_JP_TAX = 0.20315;   // 国内 配当課税
+const HD_US_WHT = 0.10;      // 米国 源泉徴収（外国税額控除前）
+/** 銘柄コード→支払月（スプレッドシート集計タブから移行。新規銘柄は未設定でOK・後から編集可） */
+const HD_PAY_MONTHS = {"1343":[3,6,9,12],"1489":[2,5,8,11],"1723":[6,12],"1928":[4,10],"1951":[6,12],"1976":[6,12],"1980":[6,12],"2003":[6,12],"2124":[3],"2169":[3,9],"2296":[3,6,9,12],"2317":[6,12],"2391":[4,10],"2393":[6],"2659":[5],"3003":[3,9],"3076":[3,9],"3231":[6,12],"3333":[5,11],"3771":[6],"3817":[6,12],"3834":[6,12],"4008":[6,12],"4042":[6,12],"4248":[3,9],"4345":[6,12],"4401":[6,12],"4540":[6,12],"4641":[3,9],"4752":[6],"4832":[6,12],"5186":[6,12],"5334":[6,12],"5388":[6,12],"5464":[6,12],"6073":[6,12],"6345":[6,12],"6381":[6,12],"6432":[5],"6458":[6,12],"6539":[6],"6652":[6,12],"6785":[3,9],"7292":[6,12],"7438":[6,12],"7483":[6,12],"7723":[6,12],"7749":[6,12],"7820":[6,12],"7921":[2,8],"7931":[6,12],"7989":[3,9],"7994":[6,12],"8058":[6,12],"8130":[6,12],"8309":[6,12],"8584":[6,12],"8593":[6,12],"8725":[6,12],"9057":[6,12],"9069":[6,12],"9233":[6,12],"9303":[6,12],"9304":[6,12],"9364":[6,12],"9368":[6,12],"9381":[5,11],"9513":[6,12],"9769":[6,12],"9795":[6,12],"9986":[6,12],"208A":[3,6,9,12],"HDV":[3,6,9,12],"SPYD":[3,6,9,12],"VYM":[3,6,9,12]};
+function hdIsForeign(sector){ return /米国|米ドル|海外|外国/.test(sector||''); }
+/** 配当（円）の税引後。foreign=米国系は源泉10%控除後に国内課税 */
+function hdAfterTax(gross, foreign){ const afterUS = foreign ? gross*(1-HD_US_WHT) : gross; return afterUS*(1-HD_JP_TAX); }
 
 /** 管理シートCSVの明細表（75行）を解析 → ポートフォリオへ保存。戻り=取込件数 */
 function parseDivSheetCSV(text){
@@ -2770,7 +2781,8 @@ function parseDivSheetCSV(text){
     const cyc = c.find(x=>x==='景気敏感'||x==='ディフェンシブ') || '';
     // price/cost/dps は端数込みで保持（購入額・評価額・配当金を完全再現＝合計が一致）
     p[c[1]] = { name:c[2], sector:c[4]||'その他', cyc,
-      shares, cost: purchase/shares, price: evalv/shares, dps: dividend/shares };
+      shares, cost: purchase/shares, price: evalv/shares, dps: dividend/shares,
+      months: (p[c[1]]&&p[c[1]].months&&p[c[1]].months.length) ? p[c[1]].months : (HD_PAY_MONTHS[c[1]]||[]) };
     n++;
   }
   setPortfolio(p); return n;
@@ -2799,7 +2811,7 @@ function refreshFromMF(text){
     const price = sh? Math.round(a.evalSum/sh) : 0;
     const cost  = sh? Math.round(a.purSum/sh) : 0;
     if(p[code]){ p[code].shares=sh; p[code].price=price; p[code].cost=cost; if(a.name) p[code].name=a.name; upd++; }
-    else { p[code]={name:a.name,sector:'未設定',cyc:'',shares:sh,cost,price,dps:0}; add++; miss.push(code); }
+    else { p[code]={name:a.name,sector:'未設定',cyc:'',shares:sh,cost,price,dps:0,months:HD_PAY_MONTHS[code]||[]}; add++; miss.push(code); }
   });
   setPortfolio(p); return {upd,add,miss};
 }
@@ -2812,14 +2824,25 @@ function pfRows(){
     const evalv=Math.round((+s.price||0)*shares);
     const purchase=Math.round((+s.cost||0)*shares);
     const dividend=Math.round((+s.dps||0)*shares);
-    return { code, name:s.name||code, sector:s.sector||'その他', cyc:s.cyc||'',
+    const sector=s.sector||'その他';
+    const foreign=hdIsForeign(sector);
+    const months=(Array.isArray(s.months)&&s.months.length)?s.months:(HD_PAY_MONTHS[code]||[]);
+    return { code, name:s.name||code, sector, cyc:s.cyc||'', foreign, months,
       shares, price:+s.price||0, cost:+s.cost||0, dps:+s.dps||0,
-      evalv, purchase, dividend, pl:evalv-purchase,
+      evalv, purchase, dividend, net:Math.round(hdAfterTax(dividend,foreign)), pl:evalv-purchase,
       ynow: evalv? dividend/evalv*100 : 0, ycost: purchase? dividend/purchase*100 : 0 };
   });
 }
+/** 月別配当（税引前・税引後の円配列[12]）。支払月で年間配当を均等割り */
+function pfMonthly(rows){
+  const gross=new Array(12).fill(0), net=new Array(12).fill(0);
+  rows.forEach(r=>{ const ms=(r.months&&r.months.length)?r.months:[]; if(!ms.length) return;
+    const g=r.dividend/ms.length, nt=r.net/ms.length;
+    ms.forEach(m=>{ if(m>=1&&m<=12){ gross[m-1]+=g; net[m-1]+=nt; } }); });
+  return { gross, net };
+}
 
-let hdCharts = { sector:null, cyc:null, yield:null };
+let hdCharts = { sector:null, cyc:null, yield:null, month:null };
 function destroyHdCharts(){ Object.keys(hdCharts).forEach(k=>{ if(hdCharts[k]){ hdCharts[k].destroy(); hdCharts[k]=null; } }); }
 
 /** ダッシュボード描画 */
@@ -2837,8 +2860,8 @@ function renderHighDiv(){
   const plPct = totalPur? totalPL/totalPur*100 : 0;
   const yieldCost = totalPur? totalDiv/totalPur*100 : 0;   // 取得ベース（シートの「配当利回り」と一致）
   const yieldNow  = totalEval? totalDiv/totalEval*100 : 0; // 時価ベース
-  const nisaRatio = (typeof inputs!=='undefined' && inputs.divNisaRatio) ? (+inputs.divNisaRatio.value||0)/100 : 0;
-  const divAfterTax = Math.round(totalDiv * (1 - (1-nisaRatio)*0.20315));
+  const divAfterTax = sum(r=>r.net);                       // 税引後（国内20.315%／米国は源泉10%控除後に国内課税）
+  const monthly = pfMonthly(rows);                         // 月別配当（税引前/税引後）
 
   // 業種集計（評価額）
   const bySector={}; rows.forEach(r=>{ bySector[r.sector]=(bySector[r.sector]||0)+r.evalv; });
@@ -2882,8 +2905,12 @@ function renderHighDiv(){
       ${card('購入額', yenComma(totalPur)+'円')}
       ${card('損益額', (totalPL>=0?'+':'')+yenComma(totalPL)+'円', `( ${plPct>=0?'+':''}${plPct.toFixed(2)}% )`, totalPL>=0?'var(--green)':'var(--rose)')}
       ${card('配当利回り（取得）', yieldCost.toFixed(2)+'%', `時価 ${yieldNow.toFixed(2)}%`)}
-      ${card('年間配当金（税引後）', yenComma(divAfterTax)+'円', `税引前 ${yenComma(totalDiv)}円・NISA${(nisaRatio*100).toFixed(0)}%`, 'var(--teal-deep)')}
+      ${card('年間配当金（税引後）', yenComma(divAfterTax)+'円', `税引前 ${yenComma(totalDiv)}円`, 'var(--teal-deep)')}
       ${card('銘柄数', rows.length+'')}
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">配当金支払額（月別・税引前）</div>
+      <div style="position:relative;height:170px;"><canvas id="hdMonthChart"></canvas></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
       <div><div style="font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">業種割合（評価額）</div><div style="position:relative;height:${Math.max(sectors.length*18,160)}px;"><canvas id="hdSectorChart"></canvas></div></div>
@@ -2909,6 +2936,8 @@ function renderHighDiv(){
   if(cc) hdCharts.cyc=new Chart(cc.getContext('2d'),{type:'doughnut',data:{labels:['景気敏感','ディフェンシブ','未分類'].filter(k=>cyc[k]>0),datasets:[{data:['景気敏感','ディフェンシブ','未分類'].filter(k=>cyc[k]>0).map(k=>cyc[k]),backgroundColor:['#d97706','#0d6e6e','#94a3b8']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}},tooltip:{callbacks:{label:c=>{const t=c.dataset.data.reduce((s,v)=>s+v,0);return `${c.label}: ${(c.parsed/t*100).toFixed(0)}%`;}}}}}});
   const yc=document.getElementById('hdYieldChart');
   if(yc) hdCharts.yield=new Chart(yc.getContext('2d'),{type:'bar',data:{labels:buckets,datasets:[{data:hist,backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:8}}},y:{ticks:{font:{size:9},stepSize:5}}}}});
+  const mc=document.getElementById('hdMonthChart');
+  if(mc) hdCharts.month=new Chart(mc.getContext('2d'),{type:'bar',data:{labels:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],datasets:[{data:monthly.gross.map(v=>Math.round(v)),backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${yenComma(c.parsed.y)}円`}}},scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:9},callback:v=>(v/10000)+'万'}}}}});
 }
 function yenComma(n){ return Math.round(+n||0).toLocaleString(); }
 
