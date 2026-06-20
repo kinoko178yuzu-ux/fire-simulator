@@ -484,6 +484,13 @@ body.mode-sim .mode-plan { display:none !important; }
 .bg-table tr[data-group]:hover td { background: var(--teal-bg); }
 .bg-table tr[data-group]:hover .bg-rowlabel { background: var(--teal-bg); }
 .bg-table tr[data-group]:hover .bg-cell { background: #fffef8; }
+/* ★NEW 内訳ドリルダウン（MF中項目＝閲覧専用の子行） */
+.bg-toggle { background: none; border: none; cursor: pointer; font-size: 9px; padding: 0 3px 0 0; line-height: 1; color: var(--ink-mute); }
+.bg-toggle:hover { color: var(--teal-deep); }
+.bg-childrow td { background: #faf8f3; color: var(--ink-mute); font-size: 10px; }
+.bg-childlabel { padding-left: 22px !important; font-weight: 500 !important; color: var(--ink-mute) !important; }
+.bg-childcell { font-family: 'JetBrains Mono', monospace; text-align: right !important; padding: 3px 5px !important; color: var(--ink-soft); }
+.bg-childavg { font-family: 'JetBrains Mono', monospace; font-weight: 600; color: var(--teal-deep); background: #eef3ef !important; }
 /* ★NEW 配当管理: 支払月トグル */
 .dv-month { width: 24px; height: 22px; padding: 0; font-size: 10px; font-family: inherit; border: 1px solid var(--border); background: var(--bg-subtle); color: var(--ink-mute); cursor: pointer; border-radius: 3px; }
 .dv-month.on { background: var(--teal); border-color: var(--teal); color: #fff; font-weight: 700; }
@@ -2190,6 +2197,22 @@ function setBudget(b) {
   document.getElementById('budgetSheetJson').value = JSON.stringify(b);
 }
 function budgetRowArr(b, key) { return (b[key] && b[key].length === 12) ? b[key] : new Array(12).fill(0); }
+/** MF取込の中項目内訳 { 月idx: { 行key: { 中項目名: 万円 } } } */
+function budgetDetail(b) { return (b._mfDetail && typeof b._mfDetail === 'object') ? b._mfDetail : {}; }
+/** ある行key配下の中項目名一覧（全12ヶ月の和集合・初出順） */
+function budgetRowMids(b, key) {
+  const det = budgetDetail(b); const seen = [];
+  for (let m = 0; m < 12; m++) {
+    const d = det[m] && det[m][key];
+    if (d) for (const n of Object.keys(d)) if (!seen.includes(n)) seen.push(n);
+  }
+  return seen;
+}
+/** 中項目1つの12ヶ月配列（万円） */
+function budgetChildArr(b, key, mid) {
+  const det = budgetDetail(b);
+  return Array.from({ length: 12 }, (_, m) => { const d = det[m] && det[m][key]; return (d && +d[mid]) || 0; });
+}
 function budgetHasData() {
   const b = getBudget();
   return [...BUDGET_INCOME_ROWS, ...BUDGET_ALL_EXP].some(r => budgetRowArr(b, r.key).some(v => +v > 0));
@@ -2220,10 +2243,21 @@ function renderBudgetSheet() {
   const b = getBudget();
   const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
   const cell = (key, m, v) => `<input type="number" class="bg-cell" data-k="${key}" data-m="${m}" value="${v||''}" min="0" step="0.1" inputmode="decimal">`;
+  const activeMonths = Math.max(budgetActiveMonths(b), 1);
+  const childRowHtml = (key, mid) => {
+    const arr = budgetChildArr(b, key, mid);
+    const avg = arr.reduce((s,v)=>s+(+v||0),0) / activeMonths;
+    const tds = arr.map(v=>`<td class="bg-childcell">${v?(+v).toFixed(1):''}</td>`).join('');
+    return `<tr class="bg-childrow" data-child="${key}" style="display:none;"><td class="bg-rowlabel bg-childlabel">${mid}</td>${tds}<td class="bg-childavg">${avg?avg.toFixed(1):'–'}</td></tr>`;
+  };
   const rowHtml = (r, group) => {
     const arr = budgetRowArr(b, r.key);
     const tds = arr.map((v,m)=>`<td>${cell(r.key,m,v)}</td>`).join('');
-    return `<tr data-group="${group}"><td class="bg-rowlabel">${r.label}</td>${tds}<td class="bg-avg" data-avgk="${r.key}">–</td></tr>`;
+    const mids = budgetRowMids(b, r.key);
+    const toggle = mids.length ? `<button type="button" class="bg-toggle" data-tk="${r.key}" aria-expanded="false" title="MFの中項目内訳を表示">▶</button>` : '';
+    let html = `<tr data-group="${group}"><td class="bg-rowlabel">${toggle}${r.label}</td>${tds}<td class="bg-avg" data-avgk="${r.key}">–</td></tr>`;
+    for (const mid of mids) html += childRowHtml(r.key, mid);
+    return html;
   };
   const mfMeta = b._mfMeta || {};
   const importBtns = months.map((mn,m)=>{
@@ -2274,6 +2308,16 @@ function renderBudgetSheet() {
   let bgImportMonth = null;
   host.querySelectorAll('.bg-imp').forEach(btn => {
     btn.addEventListener('click', () => { bgImportMonth = +btn.dataset.m; document.getElementById('bgCsvInput').click(); });
+  });
+  // 内訳ドリルダウン（▶で中項目の子行を開閉）
+  host.querySelectorAll('.bg-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = btn.dataset.tk;
+      const open = btn.getAttribute('aria-expanded') === 'true';
+      host.querySelectorAll(`tr[data-child="${k}"]`).forEach(tr => { tr.style.display = open ? 'none' : ''; });
+      btn.setAttribute('aria-expanded', String(!open));
+      btn.textContent = open ? '▶' : '▼';
+    });
   });
   host.querySelector('#bgCsvInput').addEventListener('change', (e) => {
     const file = e.target.files && e.target.files[0];
@@ -2416,6 +2460,7 @@ function importMFCsvToMonth(text, monthIdx) {
   if (!rows.length) return {};
   let start = (rows[0] && rows[0].some(c => (c||'').includes('計算対象') || (c||'').includes('大項目'))) ? 1 : 0;
   const agg = {}; // rowKey -> yen
+  const detail = {}; // rowKey -> { 中項目名: yen }（内訳ドリルダウン用）
   const skipped = {}; // マップに無い大項目 -> yen（黙って捨てると合計がMFと合わなくなる）
   for (let i = start; i < rows.length; i++) {
     const r = rows[i]; if (!r || r.length < 9) continue;
@@ -2429,11 +2474,15 @@ function importMFCsvToMonth(text, monthIdx) {
       else if (mid.includes('配当')) k='dividend';
       else if (big==='収入'&&(mid.includes('事業')||mid.includes('副'))) k='side';
       agg[k]=(agg[k]||0)+amt;
+      const mn = mid || '(中項目なし)';
+      detail[k]=detail[k]||{}; detail[k][mn]=(detail[k][mn]||0)+amt;
     } else {
       const k = MF_BIG_MAP[big];
       if (k==='_skip') continue;
       if (!k) { const name = big || '(大項目なし)'; skipped[name]=(skipped[name]||0)+(-amt); continue; }
       agg[k]=(agg[k]||0)+(-amt);
+      const mn = mid || '(中項目なし)';
+      detail[k]=detail[k]||{}; detail[k][mn]=(detail[k][mn]||0)+(-amt);
     }
   }
   const b = getBudget();
@@ -2441,6 +2490,14 @@ function importMFCsvToMonth(text, monthIdx) {
     if (!b[r.key]) b[r.key] = new Array(12).fill(0);
     if (agg[r.key] != null) b[r.key][monthIdx] = Math.round(agg[r.key]/10000*10)/10; // 円→万 0.1
   });
+  // 中項目内訳を保存（再取込時はその月を上書き。円→万 0.1）
+  b._mfDetail = b._mfDetail || {};
+  const dWan = {};
+  Object.keys(detail).forEach(k => {
+    dWan[k] = {};
+    Object.keys(detail[k]).forEach(mn => { dWan[k][mn] = Math.round(detail[k][mn]/10000*10)/10; });
+  });
+  b._mfDetail[monthIdx] = dWan;
   // 取込済み月を記録（月見出しの✅表示用。旧データは _mfMeta 無し=全部📥のまま動く）
   b._mfMeta = b._mfMeta || {};
   const now = new Date();
