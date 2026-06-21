@@ -1894,7 +1894,19 @@ select:focus { border-color: var(--teal); }
           <strong>予定</strong>は上の高配当株ポートフォリオの予想配当（配当単価×株数）から自動。<strong>実績</strong>は年間収支シートの📈配当行（マネーフォワードCSVの配当所得）から自動集計。毎月「予定どおり入金されたか」を比較できます。
         </div>
         <input type="hidden" id="dividendListJson" value="[]">
+        <input type="hidden" id="divActualJson" value='{"txns":[]}'>
         <div id="divCompare"></div>
+        <details style="margin-top:14px;" id="divPerStockDetails">
+          <summary style="font-size:12px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">🏢 銘柄別 予定 vs 実績（証券会社CSV）</summary>
+          <div style="font-size:10.5px;color:var(--ink-mute);margin:6px 0 8px;line-height:1.6;">
+            家計簿には銘柄名が無いため、<strong>証券会社の配当CSV</strong>で銘柄別の実績を取り込みます（税引後・銘柄名つき）。複数ファイル・複数口座OK（重複は自動除外）。<br>
+            ・楽天証券：マイメニュー→配当・分配金→CSVで保存（dividendlist…）<br>
+            ・SBI証券：口座管理→My資産→配当金・分配金履歴→CSVダウンロード（DISTRIBUTION…）
+          </div>
+          <input type="file" id="divBrokerCsv" accept=".csv,text/csv" multiple style="font-size:11px;margin-bottom:6px;">
+          <div id="divBrokerResult" style="font-size:11px;margin-bottom:8px;"></div>
+          <div id="divPerStock"></div>
+        </details>
       </div>
 
       <div class="fail-rate-banner mode-sim" id="failRateBanner">
@@ -2766,6 +2778,7 @@ function renderDivCompare() {
       </table>
     </div>
     <div style="font-size:10.5px;margin-top:6px;color:var(--ink-mute);">予定＝ポートフォリオの予想配当（税引後）を支払月で配分。「未」＝その月の収支シートが未入力（MF CSV取込で実績が入ります）。達成率は取込済み月の予定合計に対する実績。</div>`;
+  if (typeof renderDivPerStock === 'function') renderDivPerStock();
 }
 
 /* ============================================================
@@ -2938,6 +2951,79 @@ function hdManualAdd(){
   codeEl.value=nameEl.value=shEl.value=prEl.value='';
 }
 
+/* ============================================================
+ *  ★NEW 証券会社の配当CSV取込（銘柄別の実績）
+ *  divActualJson = { txns:[ {date:'YYYY-MM-DD', code, yen(税引後), src} ] }
+ *  楽天: dividendlist（入金日…受取金額）／ SBI: DISTRIBUTION（受渡日…金額(税引後)）
+ *  ========================================================== */
+function getActual(){ try{ const o=JSON.parse(document.getElementById('divActualJson').value||'{}'); return (o&&Array.isArray(o.txns))?o:{txns:[]}; }catch{ return {txns:[]}; } }
+function setActual(a){ document.getElementById('divActualJson').value=JSON.stringify(a); if(typeof debouncedSave==='function'&&!isApplyingCloud) debouncedSave(); }
+function hdToYMD(d){ const m=String(d||'').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/); return m?`${m[1]}-${String(+m[2]).padStart(2,'0')}-${String(+m[3]).padStart(2,'0')}`:''; }
+/** 楽天/SBIの配当CSVを解析 → [{date,code,yen,src}] */
+function parseBrokerDividendCSV(text){
+  const rows=parseCSV(text); const out=[];
+  let hi=-1, fmt='';
+  for(let i=0;i<rows.length;i++){ const r=rows[i].map(x=>(x||'').trim());
+    if(r[0]==='入金日' && r.some(c=>c.indexOf('受取金額')>=0)){ hi=i; fmt='rakuten'; break; }
+    if(r[0]==='受渡日' && r.some(c=>c.indexOf('銘柄')>=0) && r.some(c=>c.indexOf('受取額')>=0||c.indexOf('金額')>=0)){ hi=i; fmt='sbi'; break; }
+  }
+  if(hi<0) return out;
+  if(fmt==='rakuten'){
+    const H=rows[hi].map(x=>(x||'').trim());
+    const di=H.indexOf('入金日'), cdi=H.indexOf('銘柄コード'), yi=H.findIndex(c=>c.indexOf('受取金額')>=0);
+    for(let i=hi+1;i<rows.length;i++){ const r=rows[i]; if(!r||r.length<=yi) continue;
+      const code=(r[cdi]||'').trim().toUpperCase(); if(!HD_CODE_RE.test(code)) continue;
+      const yen=hdNum(r[yi]); const date=hdToYMD(r[di]); if(!date||!yen) continue;
+      out.push({date,code,yen,src:'楽天'}); }
+  } else {
+    for(let i=hi+1;i<rows.length;i++){ const r=rows[i].map(x=>(x||'').trim()); if(r.length<6||!r[0]) continue;
+      if(!/\d{4}\/\d{1,2}\/\d{1,2}/.test(r[0])) continue;
+      const mm=(r[3]||'').match(/(\d{3,4}[A-Z]?|[A-Z]{2,5})\s*$/); if(!mm) continue;
+      const code=mm[1].toUpperCase(); const yen=hdNum(r[5]); const date=hdToYMD(r[0]); if(!date||!yen) continue;
+      out.push({date,code,yen,src:'SBI'}); }
+  }
+  return out;
+}
+/** CSV1ファイル取込（重複は date|code|yen|src で排除）。戻り=新規追加件数 */
+function importBrokerCSV(text){
+  const list=parseBrokerDividendCSV(text); if(!list.length) return 0;
+  const a=getActual(); const seen=new Set(a.txns.map(t=>`${t.date}|${t.code}|${t.yen}|${t.src}`));
+  let added=0; list.forEach(t=>{ const k=`${t.date}|${t.code}|${t.yen}|${t.src}`; if(!seen.has(k)){ seen.add(k); a.txns.push(t); added++; } });
+  setActual(a); return added;
+}
+function actualSumByCode(){ const m={}; getActual().txns.forEach(t=>{ m[t.code]=(m[t.code]||0)+t.yen; }); return m; }
+function actualPeriod(){ const ts=getActual().txns.map(t=>t.date).sort(); return ts.length?{from:ts[0],to:ts[ts.length-1],n:ts.length}:null; }
+
+/** 銘柄別 予定 vs 実績（実績=証券会社CSV・税引後） */
+function renderDivPerStock(){
+  const host=document.getElementById('divPerStock'); if(!host) return;
+  const rows=(typeof pfRows==='function')?pfRows():[];
+  const act=actualSumByCode(); const per=actualPeriod();
+  const total=getActual().txns.reduce((s,t)=>s+t.yen,0);
+  if(!per){ host.innerHTML='<div style="font-size:11px;color:var(--ink-mute);">証券会社の配当CSV（楽天 dividendlist / SBI DISTRIBUTION）を取り込むと、銘柄別の実績がここに出ます。</div>'; return; }
+  // ポートフォリオに無いコードも実績側に出す
+  const codes=Array.from(new Set([...rows.map(r=>r.code), ...Object.keys(act)]));
+  const list=codes.map(code=>{ const r=rows.find(x=>x.code===code);
+    return { code, name:r?r.name:code, plan:r?r.net:0, act:act[code]||0 }; })
+    .filter(x=>x.plan>0||x.act>0).sort((a,b)=>b.act-a.act);
+  const man=v=>(v/10000).toFixed(1);
+  const totalPlan=rows.reduce((s,r)=>s+r.net,0);
+  const body=list.map(x=>{ const d=x.act-x.plan; const rate=x.plan>0?x.act/x.plan*100:null;
+    return `<tr><td>${x.code}</td><td style="text-align:left;">${x.name}</td>
+      <td style="text-align:right;">${x.plan?yenComma(x.plan):'–'}</td>
+      <td style="text-align:right;font-weight:700;color:var(--teal-deep);">${x.act?yenComma(x.act):'–'}</td>
+      <td style="text-align:right;color:${d<0?'var(--rose)':'var(--green)'};">${d>=0?'+':''}${yenComma(d)}</td>
+      <td style="text-align:right;color:var(--ink-mute);">${rate!=null?rate.toFixed(0)+'%':'–'}</td></tr>`; }).join('');
+  host.innerHTML=`
+    <div style="font-size:11px;color:var(--ink-soft);margin-bottom:6px;">取込期間 <b>${per.from}〜${per.to}</b>（${per.n}件）／ 予定 年間 <b>${man(totalPlan)}万</b>・実績 <b>${man(total)}万</b>
+      <button type="button" id="divActualClear" style="margin-left:8px;font-size:10px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-subtle);cursor:pointer;font-family:inherit;">実績をクリア</button></div>
+    <div style="overflow-x:auto;max-height:360px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+      <table class="bg-table" style="min-width:480px;"><thead><tr><th>code</th><th>銘柄名</th><th>予定(年/税引後)</th><th>実績(取込期間)</th><th>差</th><th>達成率</th></tr></thead><tbody>${body}</tbody></table>
+    </div>`;
+  const clr=document.getElementById('divActualClear');
+  if(clr) clr.addEventListener('click',()=>{ if(confirm('取り込んだ実績データをすべて消去しますか？')){ setActual({txns:[]}); renderDivPerStock(); } });
+}
+
 /** ダッシュボード描画 */
 function renderHighDiv(){
   const host=document.getElementById('hdDashboard'); if(!host) return;
@@ -3089,6 +3175,21 @@ function initHighDiv(){
   if(addBtn) addBtn.addEventListener('click', hdManualAdd);
   const onlyUnset=document.getElementById('hdEditOnlyUnset');
   if(onlyUnset) onlyUnset.addEventListener('change', renderHdEditor);
+  // 証券会社の配当CSV（楽天/SBI・Shift-JIS）を取込
+  const bcsv=document.getElementById('divBrokerCsv');
+  if(bcsv) bcsv.addEventListener('change',(e)=>{
+    const files=[...(e.target.files||[])]; const res=document.getElementById('divBrokerResult');
+    if(!files.length) return; let done=0, total=0;
+    files.forEach(f=>{ const reader=new FileReader();
+      reader.onload=()=>{ const buf=reader.result; let text;
+        try{ text=new TextDecoder('shift-jis').decode(new Uint8Array(buf)); }catch{ text=''; }
+        if(text.indexOf('入金日')===-1 && text.indexOf('受渡日')===-1){ try{ text=new TextDecoder('utf-8').decode(new Uint8Array(buf)); }catch{} }
+        try{ total+=importBrokerCSV(text); }catch(err){}
+        done++; if(done===files.length){ if(res) res.innerHTML=`<span style="color:var(--green);font-weight:700;">✅ ${files.length}ファイル取込 — 新規 ${total}件</span>`; renderDivPerStock(); }
+      };
+      reader.readAsArrayBuffer(f); });
+    e.target.value='';
+  });
   renderHighDiv(); renderDivCompare(); renderHdEditor();
 }
 
@@ -3179,7 +3280,7 @@ const INPUT_IDS = [
   'monthlyInvest','bonusInvest','returnAcc','returnRet','volatility','nisaRatio',
   'divGrowth','divYield','divNisaRatio',
   'monthlyLifeExHouse','annualSpecial','sideIncomeGross','sideExpenseRatio','sideIncomeEndAge','inflation',
-  'budgetSheetJson','dividendListJson','divPortfolioJson','assetHistoryJson',
+  'budgetSheetJson','dividendListJson','divPortfolioJson','divActualJson','assetHistoryJson',
   'loanBalance','loanRate','loanYears','loanMonthly','loanBonus',
   'taxCreditYears','taxCreditAmount','loanPayoff','payoffTiming','payoffCustomYear',
   'child1Path','child2Path',
