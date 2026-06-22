@@ -1903,6 +1903,9 @@ select:focus { border-color: var(--teal); }
             ・楽天証券：マイメニュー→配当・分配金→CSVで保存（dividendlist…）<br>
             ・SBI証券：口座管理→My資産→配当金・分配金履歴→CSVダウンロード（DISTRIBUTION…）
           </div>
+          <div style="margin-bottom:6px;"><label style="font-size:11px;color:var(--ink-soft);">口座ラベル（任意・例：私／奥さん）
+            <input id="divBrokerLabel" type="text" placeholder="未入力でもOK" style="font-size:11px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;width:140px;"></label>
+            <span style="font-size:10px;color:var(--ink-mute);">同じ銘柄を別の人が持つ場合、ラベルを変えると取り違え（過少計上）を防げます</span></div>
           <input type="file" id="divBrokerCsv" accept=".csv,text/csv" multiple style="font-size:11px;margin-bottom:6px;">
           <div id="divBrokerResult" style="font-size:11px;margin-bottom:8px;"></div>
           <div id="divPerStock"></div>
@@ -2984,9 +2987,11 @@ function parseBrokerDividendCSV(text){
   }
   return out;
 }
-/** CSV1ファイル取込（重複は date|code|yen|src で排除）。戻り=新規追加件数 */
-function importBrokerCSV(text){
+/** CSV1ファイル取込（重複は date|code|yen|src で排除）。labelで口座(私/奥さん等)を区別。戻り=新規追加件数 */
+function importBrokerCSV(text, label){
   const list=parseBrokerDividendCSV(text); if(!list.length) return 0;
+  const lab=(label||'').trim();
+  if(lab) list.forEach(t=>{ t.src=`${t.src}・${lab}`; });   // 出所にラベルを付与→私/奥さんが衝突しない
   const a=getActual(); const seen=new Set(a.txns.map(t=>`${t.date}|${t.code}|${t.yen}|${t.src}`));
   let added=0; list.forEach(t=>{ const k=`${t.date}|${t.code}|${t.yen}|${t.src}`; if(!seen.has(k)){ seen.add(k); a.txns.push(t); added++; } });
   setActual(a); return added;
@@ -3179,12 +3184,13 @@ function initHighDiv(){
   const bcsv=document.getElementById('divBrokerCsv');
   if(bcsv) bcsv.addEventListener('change',(e)=>{
     const files=[...(e.target.files||[])]; const res=document.getElementById('divBrokerResult');
+    const labEl=document.getElementById('divBrokerLabel'); const label=labEl?labEl.value:'';
     if(!files.length) return; let done=0, total=0;
     files.forEach(f=>{ const reader=new FileReader();
       reader.onload=()=>{ const buf=reader.result; let text;
         try{ text=new TextDecoder('shift-jis').decode(new Uint8Array(buf)); }catch{ text=''; }
         if(text.indexOf('入金日')===-1 && text.indexOf('受渡日')===-1){ try{ text=new TextDecoder('utf-8').decode(new Uint8Array(buf)); }catch{} }
-        try{ total+=importBrokerCSV(text); }catch(err){}
+        try{ total+=importBrokerCSV(text, label); }catch(err){}
         done++; if(done===files.length){ if(res) res.innerHTML=`<span style="color:var(--green);font-weight:700;">✅ ${files.length}ファイル取込 — 新規 ${total}件</span>`; renderDivPerStock(); }
       };
       reader.readAsArrayBuffer(f); });
