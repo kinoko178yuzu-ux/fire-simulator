@@ -66,16 +66,53 @@ def fetch_sbi(page, days: int):
 
 
 def _need_login(page):
-    u = page.url.lower()
-    if "login" in u or "/account/assets/dividends" not in u:
-        return True
-    # パスワード入力欄があればログイン画面
+    # ログイン画面の最も確実な目印＝パスワード入力欄の存在
     try:
-        if page.locator("input[type=password]").count() > 0:
+        if page.locator("input[type=password]:visible").count() > 0:
             return True
     except Exception:
         pass
+    if "login" in page.url.lower():
+        return True
     return False
+
+
+def fetch_rakuten(ctx, page):
+    """楽天はURLがセッション依存（BV_SessionID）。スクリプトからURL遷移すると
+    セッションが切れるため、配当明細ページまでは手動で進めてもらい、
+    スクリプトは最後の『CSVで保存』クリック＆保存だけを行う。"""
+    # セッションを壊さない公開トップだけ開く（以降の遷移は一切しない）
+    try:
+        page.goto("https://www.rakuten-sec.co.jp/", wait_until="domcontentloaded")
+    except Exception:
+        pass
+
+    print("\n=== 楽天は手動で配当明細まで進めてください（スクリプトはURL遷移しません）===")
+    print("この専用ウィンドウで：")
+    print("  1) 楽天証券にログイン")
+    print("  2) マイメニュー → 配当・分配金")
+    print("  3) 表示期間（今年/すべて）・口座（すべて）を選び『表示する』")
+    print("  4) 『配当金・分配金一覧』の明細と『CSVで保存』ボタンが見える状態にする")
+    input("そこまでできたら Enter を押してください（CSVを自動保存します）... ")
+
+    # ユーザーが操作した最新タブを対象にする（新規タブで開いていてもOK）
+    page = ctx.pages[-1]
+    try:
+        page.bring_to_front()
+    except Exception:
+        pass
+
+    csv_btn = _find_csv_button(page)
+    if not csv_btn:
+        _debug(page, "rakuten")
+        raise RuntimeError("『CSVで保存』ボタンが見つかりませんでした。配当明細が表示された画面で実行してください（~/Downloads/broker_debug.png を確認）")
+    with page.expect_download(timeout=30000) as dl:
+        csv_btn.click()
+    download = dl.value
+    out = OUT_DIR / f"rakuten_dividends_{datetime.date.today():%Y%m%d}.csv"
+    download.save_as(str(out))
+    print(f"[楽天] 保存しました → {out}")
+    return out
 
 
 def _find_csv_button(page):
@@ -108,7 +145,7 @@ def _debug(page, tag):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("broker", choices=["sbi"], help="取得する証券会社")
+    ap.add_argument("broker", choices=["sbi", "rakuten"], help="取得する証券会社")
     ap.add_argument("--days", type=int, default=400, help="取得期間（日数・既定400≒13ヶ月）")
     args = ap.parse_args()
 
@@ -131,6 +168,8 @@ def main():
         try:
             if args.broker == "sbi":
                 fetch_sbi(page, args.days)
+            elif args.broker == "rakuten":
+                fetch_rakuten(ctx, page)
         finally:
             print("完了。ウィンドウは閉じてOKです。")
             ctx.close()
