@@ -10,6 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@3.1.0/dist/chartjs-chart-treemap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <!-- Firebase（クラウド同期用） -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -3118,15 +3119,16 @@ function renderHighDiv(){
   // チャート
   if(typeof Chart==='undefined') return;
   destroyHdCharts();
+  const DL = (typeof ChartDataLabels!=='undefined') ? [ChartDataLabels] : []; // 配当グラフだけに適用（FIRE側は無効）
   const COL=['#0d6e6e','#d97706','#16a34a','#b8413d','#8a5cf6','#0891b2','#ca8a04','#db2777','#65a30d','#9a8c70','#64748b','#e07a5f','#3d8361','#7c3aed','#ef4444','#14b8a6','#f59e0b','#6366f1'];
   const sc=document.getElementById('hdSectorChart');
-  if(sc) hdCharts.sector=new Chart(sc.getContext('2d'),{type:'bar',data:{labels:sectors,datasets:[{data:sectors.map(s=>+(bySector[s]/totalEval*100).toFixed(1)),backgroundColor:sectors.map((_,i)=>COL[i%COL.length])}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed.x}%（${yenComma(bySector[c.label])}円）`}}},scales:{x:{ticks:{font:{size:9},callback:v=>v+'%'}},y:{ticks:{font:{size:9}}}}}});
+  if(sc) hdCharts.sector=new Chart(sc.getContext('2d'),{type:'bar',plugins:DL,data:{labels:sectors,datasets:[{data:sectors.map(s=>+(bySector[s]/totalEval*100).toFixed(1)),backgroundColor:sectors.map((_,i)=>COL[i%COL.length])}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,layout:{padding:{right:28}},plugins:{legend:{display:false},datalabels:{anchor:'end',align:'end',clamp:true,color:'#555',font:{size:9,weight:'700'},formatter:v=>v+'%'},tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed.x}%（${yenComma(bySector[c.label])}円）`}}},scales:{x:{ticks:{font:{size:9},callback:v=>v+'%'}},y:{ticks:{font:{size:9}}}}}});
   const cc=document.getElementById('hdCycChart');
-  if(cc) hdCharts.cyc=new Chart(cc.getContext('2d'),{type:'doughnut',data:{labels:['景気敏感','ディフェンシブ','未分類'].filter(k=>cyc[k]>0),datasets:[{data:['景気敏感','ディフェンシブ','未分類'].filter(k=>cyc[k]>0).map(k=>cyc[k]),backgroundColor:['#d97706','#0d6e6e','#94a3b8']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}},tooltip:{callbacks:{label:c=>{const t=c.dataset.data.reduce((s,v)=>s+v,0);return `${c.label}: ${(c.parsed/t*100).toFixed(0)}%`;}}}}}});
+  if(cc) hdCharts.cyc=new Chart(cc.getContext('2d'),{type:'doughnut',plugins:DL,data:{labels:['景気敏感','ディフェンシブ','未分類'].filter(k=>cyc[k]>0),datasets:[{data:['景気敏感','ディフェンシブ','未分類'].filter(k=>cyc[k]>0).map(k=>cyc[k]),backgroundColor:['#d97706','#0d6e6e','#94a3b8']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}},datalabels:{color:'#fff',font:{size:11,weight:'700'},formatter:(v,ctx)=>{const t=ctx.dataset.data.reduce((s,x)=>s+x,0);return (v/t*100).toFixed(1)+'%';}},tooltip:{callbacks:{label:c=>{const t=c.dataset.data.reduce((s,v)=>s+v,0);return `${c.label}: ${(c.parsed/t*100).toFixed(1)}%（${yenComma(c.parsed)}円）`;}}}}}});
   const yc=document.getElementById('hdYieldChart');
-  if(yc) hdCharts.yield=new Chart(yc.getContext('2d'),{type:'bar',data:{labels:buckets,datasets:[{data:hist,backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:8}}},y:{ticks:{font:{size:9},stepSize:5}}}}});
+  if(yc) hdCharts.yield=new Chart(yc.getContext('2d'),{type:'bar',plugins:DL,data:{labels:buckets,datasets:[{data:hist,backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14}},plugins:{legend:{display:false},datalabels:{anchor:'end',align:'end',color:'#555',font:{size:9,weight:'700'},formatter:v=>v}},scales:{x:{ticks:{font:{size:8}}},y:{ticks:{font:{size:9},stepSize:5}}}}});
   const mc=document.getElementById('hdMonthChart');
-  if(mc) hdCharts.month=new Chart(mc.getContext('2d'),{type:'bar',data:{labels:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],datasets:[{data:monthly.gross.map(v=>Math.round(v)),backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${yenComma(c.parsed.y)}円`}}},scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:9},callback:v=>(v/10000)+'万'}}}}});
+  if(mc) hdCharts.month=new Chart(mc.getContext('2d'),{type:'bar',plugins:DL,data:{labels:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],datasets:[{data:monthly.gross.map(v=>Math.round(v)),backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:16}},plugins:{legend:{display:false},datalabels:{anchor:'end',align:'end',color:'#555',font:{size:8,weight:'700'},formatter:v=>v?yenComma(v):'0'},tooltip:{callbacks:{label:c=>`${yenComma(c.parsed.y)}円`}}},scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:9},callback:v=>(v/10000)+'万'}}}}});
   // 銘柄構成比 ツリーマップ（景気敏感/ディフェンシブでグループ化・評価額で面積）
   const tc=document.getElementById('hdTreeChart');
   if(tc && Chart.registry.controllers.get('treemap')){
@@ -3141,8 +3143,8 @@ function renderHighDiv(){
       tree, key:'evalv', groups:['cyc','name'], spacing:0.5, borderWidth:1, borderColor:'#fff',
       backgroundColor:(c)=>{ if(c.type!=='data'||!c.raw) return 'transparent'; const g=c.raw.g; if(cycSet.has(g)) return 'transparent'; return colOf(cycByName[g]||'未分類'); },
       captions:{display:true,color:'#fff',font:{size:13,weight:'bold'},padding:4,formatter:(c)=>{ const g=c.raw.g; return cycSet.has(g)?`${g}（${(cycSum[g]/totalE*100).toFixed(0)}%）`:''; }},
-      labels:{display:true,color:'#fff',font:{size:9},overflow:'hidden',formatter:(c)=>{ const g=c.raw.g; return cycSet.has(g)?'':g; }}
-    }]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{title:(it)=>it[0].raw.g||'',label:(c)=>yenComma(c.raw.v)+'円'}}}}});
+      labels:{display:true,color:'#fff',font:{size:8},overflow:'hidden',formatter:(c)=>{ const g=c.raw.g; if(cycSet.has(g)) return ''; const parts=String(g).split(/[\s　・]+/).filter(Boolean); const lines=[]; parts.forEach(w=>{ while(w.length>6){ lines.push(w.slice(0,6)); w=w.slice(6); } lines.push(w); }); return lines.slice(0,6); }}
+    }]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},datalabels:{display:false},tooltip:{callbacks:{title:(it)=>it[0].raw.g||'',label:(c)=>yenComma(c.raw.v)+'円'}}}}});
   }
   // Top20（業種フィルタ）
   renderHdTop20();
