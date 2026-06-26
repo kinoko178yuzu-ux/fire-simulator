@@ -1823,6 +1823,16 @@ select:focus { border-color: var(--teal); }
         </div>
       </div>
 
+      <!-- ★NEW 定期的な特別費（周期もの・期間限定の費用をまとめて管理→年表&FIRE診断に反映） -->
+      <div class="card mode-plan" id="recurringCard">
+        <h3><span class="dot"></span>🔁 定期的な特別費</h3>
+        <div style="font-size:11.5px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
+          車・住宅修繕・家電・トラクター・旅行など<strong>周期が決まった費用</strong>や、親の介護・大学の仕送りなど<strong>期間限定の費用</strong>をここでまとめて管理。<strong>初回（西暦）・周期（年）・金額・終了</strong>を編集すると、年表とFIRE診断に自動反映されます。<br>
+          <span style="font-size:10.5px;color:var(--ink-mute);">周期 0＝一度きり。終了 空欄＝寿命まで繰返。介護等は周期1（毎年）＋終了年で表現します。</span>
+        </div>
+        <div id="recurringPanel" style="overflow-x:auto;"></div>
+      </div>
+
       <!-- ★NEW 年間収支シート（12ヶ月） -->
       <div class="card mode-plan" id="budgetCard">
         <h3><span class="dot"></span>📊 年間収支シート（12ヶ月の収入・支出）</h3>
@@ -3318,11 +3328,11 @@ function migrateLifeEvent(ev) {
   if (!ev) return null;
   if (ev.mode) return {
     name: ev.name||'', category: ev.category||'other', type: ev.type||'expense',
-    mode: ev.mode, value: +ev.value, amount: +ev.amount||0, repeat: +ev.repeat||0,
+    mode: ev.mode, value: +ev.value, amount: +ev.amount||0, repeat: +ev.repeat||0, end: +ev.end||0,
   };
   return {
     name: ev.name || '', category: ev.category || 'other', type: ev.type || 'expense',
-    mode: 'age', value: +(ev.age ?? 50), amount: +(ev.amount ?? 0), repeat: +(ev.repeat ?? 0),
+    mode: 'age', value: +(ev.age ?? 50), amount: +(ev.amount ?? 0), repeat: +(ev.repeat ?? 0), end: +ev.end||0,
   };
 }
 
@@ -3346,6 +3356,48 @@ function lifeEventBaseAge(ev, startAge) {
   return ev.mode === 'year' ? startAge + (+ev.value - BASE_YEAR) : +ev.value;
 }
 
+/** 🔁 定期的な特別費パネル（繰返>0 または 終了ありのイベントを一覧編集） */
+function renderRecurring() {
+  const host = document.getElementById('recurringPanel'); if (!host) return;
+  const all = getLifeEvents();
+  const baseY = (typeof BASE_YEAR!=='undefined') ? BASE_YEAR : new Date().getFullYear();
+  const sa = +(document.getElementById('currentAge') && document.getElementById('currentAge').value) || 40;
+  const firstYear = (ev) => ev.mode==='year' ? +ev.value : (baseY + ((+ev.value) - sa)); // 年齢→西暦
+  const items = all.map((ev,idx)=>({ev,idx})).filter(o => (+o.ev.repeat>0) || (+o.ev.end>0));
+  const inS = 'font-size:11px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;font-family:inherit;';
+  const rowH = (o) => { const ev=o.ev;
+    return `<tr data-i="${o.idx}">
+      <td><input class="rc-name" value="${esc(ev.name||'')}" style="${inS}min-width:120px;"></td>
+      <td><select class="rc-type" style="${inS}"><option value="expense"${ev.type!=='income'?' selected':''}>支出 −</option><option value="income"${ev.type==='income'?' selected':''}>収入 +</option></select></td>
+      <td><input class="rc-first" type="number" value="${firstYear(ev)}" min="2020" max="2100" style="${inS}width:62px;text-align:right;"></td>
+      <td><input class="rc-rep" type="number" value="${+ev.repeat||0}" min="0" max="40" style="${inS}width:46px;text-align:right;" title="0=一度きり"></td>
+      <td><input class="rc-amt" type="number" value="${+ev.amount||0}" min="0" step="10" style="${inS}width:70px;text-align:right;"></td>
+      <td><input class="rc-end" type="number" value="${ev.end||''}" placeholder="任意" min="2020" max="2100" style="${inS}width:62px;text-align:right;" title="空欄=寿命まで"></td>
+      <td style="text-align:center;"><button type="button" class="rc-del" style="background:none;border:none;color:var(--rose);font-size:15px;cursor:pointer;">×</button></td>
+    </tr>`; };
+  host.innerHTML = `<table class="bg-table" style="min-width:540px;"><thead><tr><th>項目</th><th>種別</th><th>初回(年)</th><th>周期(年)</th><th>金額(万)</th><th>終了(年)</th><th></th></tr></thead><tbody>${items.map(rowH).join('') || '<tr><td colspan="7" style="color:var(--ink-mute);text-align:left;">まだありません。下の「＋追加」から登録できます（車・住宅修繕・介護など）。</td></tr>'}</tbody></table>
+    <button type="button" id="rcAddBtn" style="margin-top:8px;padding:6px 12px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);border-radius:4px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">＋ 定期費用を追加</button>`;
+  host.querySelectorAll('tr[data-i]').forEach(tr => {
+    const i = +tr.dataset.i;
+    const commit = () => { const a = getLifeEvents(); if (!a[i]) return;
+      const type = tr.querySelector('.rc-type').value;
+      a[i] = { ...a[i], name: tr.querySelector('.rc-name').value.trim(), type,
+        category: type==='income'?'income':'other', mode:'year',
+        value: +tr.querySelector('.rc-first').value || baseY,
+        repeat: +tr.querySelector('.rc-rep').value || 0,
+        amount: +tr.querySelector('.rc-amt').value || 0,
+        end: +tr.querySelector('.rc-end').value || 0 };
+      setLifeEvents(a);  // → calculate() → renderRecurring()
+    };
+    tr.querySelectorAll('.rc-name,.rc-type,.rc-first,.rc-rep,.rc-amt,.rc-end').forEach(el => el.addEventListener('change', commit));
+    tr.querySelector('.rc-del').addEventListener('click', () => { const a = getLifeEvents(); a.splice(i,1); setLifeEvents(a); });
+  });
+  const add = document.getElementById('rcAddBtn');
+  if (add) add.addEventListener('click', () => { const a = getLifeEvents();
+    a.push({ name:'新しい費用', category:'other', type:'expense', mode:'year', value: baseY+1, amount:50, repeat:5, end:0 });
+    setLifeEvents(a); });
+}
+
 /** 初回などイベント未設定ならデフォルトを入れる（年表からは触れないため） */
 function renderSpotEvents() {
   try {
@@ -3357,7 +3409,7 @@ function renderSpotEvents() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => { renderSpotEvents(); });
+document.addEventListener('DOMContentLoaded', () => { renderSpotEvents(); renderRecurring(); });
 
 /** ====================================
  *  ★NEW アプリ・モード切替（ライフプラン / FIRE診断）
@@ -4029,6 +4081,7 @@ function readParams() {
           if (e.mode === 'year')      age = startAge + ((+e.value) - (typeof BASE_YEAR!=='undefined'?BASE_YEAR:new Date().getFullYear()));
           else if (e.mode === 'age')  age = +e.value;
           else                        age = +e.age; // 旧形式
+          const baseY = (typeof BASE_YEAR!=='undefined'?BASE_YEAR:new Date().getFullYear());
           return {
             name:     e.name || '計画支出',
             category: e.category || 'other',
@@ -4036,6 +4089,7 @@ function readParams() {
             age:      age,
             amount:   (+e.amount || 0) * 10000,  // 万円 → 円
             repeat:   e.repeat ? +e.repeat : 0,  // 0=一度きり, N=Nごとに繰り返し
+            endAge:   e.end ? (startAge + ((+e.end) - baseY)) : 0,  // 終了(西暦)→本人年齢。0=なし
           };
         }).filter(e => e.name && e.age && e.amount);
       } catch { return []; }
@@ -4175,8 +4229,9 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
     /** ★NEW ライフイベント（スポット支出・収入） */
     let spotExpenseThisYear = 0, spotIncomeThisYear = 0;
     (params.spotEvents||[]).forEach(ev => {
-      const hits = (ev.age === ageH) ||
-        (ev.repeat > 0 && ageH > ev.age && (ageH - ev.age) % ev.repeat === 0);
+      const within = !ev.endAge || ageH <= ev.endAge;   // 終了年まで（0=なし）
+      const hits = within && ((ev.age === ageH) ||
+        (ev.repeat > 0 && ageH > ev.age && (ageH - ev.age) % ev.repeat === 0));
       if (!hits) return;
       const amt = ev.amount * Math.pow(1+params.inflation, y);
       if (ev.type === 'income') spotIncomeThisYear += amt;
@@ -4446,9 +4501,12 @@ function renderLifePlanTimeline(params, fireYear) {
   userEvents.forEach((ev, idx) => {
     const baseAge = lifeEventBaseAge(ev, sa);
     (userByAge[baseAge] = userByAge[baseAge] || []).push({ idx, ev, src:true });
-    if (ev.repeat > 0)
-      for (let a = baseAge + ev.repeat; a <= params.lifeExpectancy; a += ev.repeat)
+    if (ev.repeat > 0) {
+      const endAge = ev.end ? (sa + (+ev.end - BASE_YEAR)) : params.lifeExpectancy; // 終了(西暦)→年齢。0=寿命まで
+      const lastAge = Math.min(params.lifeExpectancy, endAge);
+      for (let a = baseAge + ev.repeat; a <= lastAge; a += ev.repeat)
         (userByAge[a] = userByAge[a] || []).push({ idx, ev, src:false });
+    }
   });
 
   const colCount = hasChild2 ? 10 : 9;
@@ -4552,6 +4610,7 @@ function openLifeEventEditor(tr, year, editIdx) {
       </select>
       <input type="number" class="le-amount" placeholder="金額" value="${ev.amount||''}" min="0" step="10" style="width:84px;text-align:right;"><span style="font-size:11px;color:var(--ink-mute);">万</span>
       <span style="font-size:11px;color:var(--ink-mute);">繰返</span><input type="number" class="le-repeat" value="${ev.repeat||0}" min="0" max="30" style="width:52px;text-align:right;" title="0=一度きり、N=N年ごと"><span style="font-size:11px;color:var(--ink-mute);">年</span>
+      <span style="font-size:11px;color:var(--ink-mute);">終了</span><input type="number" class="le-end" value="${ev.end||''}" min="2020" max="2100" placeholder="任意" style="width:64px;text-align:right;" title="繰返の終了年（西暦・空欄=寿命まで）"><span style="font-size:11px;color:var(--ink-mute);">年</span>
       <button type="button" class="le-save" style="background:var(--teal);color:#fff;">保存</button>
       <button type="button" class="le-cancel" style="background:#e5e0d3;color:var(--ink);">取消</button>
       ${editIdx!=null?'<button type="button" class="le-del2" style="background:#fde8e8;color:#c0392b;">削除</button>':''}
@@ -4564,8 +4623,9 @@ function openLifeEventEditor(tr, year, editIdx) {
     const amount = +editor.querySelector('.le-amount').value || 0;
     const type = editor.querySelector('.le-type').value;
     const repeat = +editor.querySelector('.le-repeat').value || 0;
+    const end = +editor.querySelector('.le-end').value || 0;
     if (!name || !amount) { nameEl.focus(); nameEl.style.borderColor = 'var(--rose)'; return; }
-    const newEv = { name, category: type==='income'?'income':'other', type, mode:'year', value: year, amount, repeat };
+    const newEv = { name, category: type==='income'?'income':'other', type, mode:'year', value: year, amount, repeat, end };
     const a = getLifeEvents();
     if (editIdx != null) a[editIdx] = newEv; else a.push(newEv);
     setLifeEvents(a); // → calculate() → 年表再描画（エディタは消える）
@@ -4844,6 +4904,7 @@ function calculate() {
   drawTotalAssetChart(params, fireYear);
   updateBucketDisplay(params, fireYear);
   renderLifePlanTimeline(params, fireYear);
+  if (typeof renderRecurring === 'function') renderRecurring();
 }
 
 /** ============================
