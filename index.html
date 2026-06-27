@@ -2348,6 +2348,7 @@ function renderBudgetSheet() {
   <div id="bgPieWrap" style="display:none;margin-top:14px;">
     <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:8px;">支出の内訳（月平均）</div>
     <div style="max-width:420px;margin:0 auto;"><canvas id="budgetPieChart" height="240"></canvas></div>
+    <div id="bgPieList" style="max-width:440px;margin:10px auto 0;font-size:11px;"></div>
   </div>`;
 
   // 入力リスナー（input=即時に合計＆生活費反映、change=フル再計算）
@@ -2419,9 +2420,20 @@ function drawBudgetPie() {
     .map(r => ({ label: r.label, val: budgetRowTotal(b, r.key) / months }))
     .filter(x => x.val > 0)
     .sort((a, c) => c.val - a.val);
-  if (!items.length) { wrap.style.display = 'none'; if (budgetPieChart) { budgetPieChart.destroy(); budgetPieChart = null; } return; }
+  if (!items.length) { wrap.style.display = 'none'; if (budgetPieChart) { budgetPieChart.destroy(); budgetPieChart = null; } const lst0=document.getElementById('bgPieList'); if(lst0) lst0.innerHTML=''; return; }
   wrap.style.display = 'block';
   const COLORS = ['#0d6e6e','#d97706','#16a34a','#b8413d','#8a5cf6','#0891b2','#ca8a04','#db2777','#65a30d','#9a8c70','#64748b','#e07a5f','#3d8361','#7c3aed'];
+  const total = items.reduce((s,x)=>s+x.val,0) || 1;
+  // 内訳リスト（費目・金額・%）— 全費目を確実に読めるように
+  const listEl = document.getElementById('bgPieList');
+  if (listEl) listEl.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 16px;">` + items.map((x,i)=>
+    `<div style="display:flex;align-items:center;gap:6px;">
+      <span style="width:9px;height:9px;border-radius:2px;background:${COLORS[i%COLORS.length]};flex:none;"></span>
+      <span style="flex:1;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.label}</span>
+      <span style="font-family:'JetBrains Mono',monospace;color:var(--ink);">${x.val.toFixed(1)}万</span>
+      <span style="font-family:'JetBrains Mono',monospace;color:var(--ink-mute);width:38px;text-align:right;">${(x.val/total*100).toFixed(1)}%</span>
+    </div>`).join('') + `</div>
+    <div style="border-top:1px solid var(--border);margin-top:6px;padding-top:5px;display:flex;justify-content:space-between;font-weight:700;color:var(--ink-soft);"><span>合計（月平均）</span><span style="font-family:'JetBrains Mono',monospace;">${total.toFixed(1)}万</span></div>`;
   const data = {
     labels: items.map(x => x.label),
     datasets: [{ data: items.map(x => +x.val.toFixed(1)), backgroundColor: items.map((_,i)=>COLORS[i%COLORS.length]), borderColor:'#fff', borderWidth:1.5 }]
@@ -2430,10 +2442,12 @@ function drawBudgetPie() {
   budgetPieChart = new Chart(canvas.getContext('2d'), {
     type: 'doughnut',
     data,
+    plugins: (typeof ChartDataLabels!=='undefined') ? [ChartDataLabels] : [],
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
         legend: { position: 'right', labels: { font: { size: 10 }, boxWidth: 12, padding: 6 } },
+        datalabels: { color:'#fff', font:{size:10,weight:'700'}, formatter:(v,ctx)=>{ const t=ctx.dataset.data.reduce((s,x)=>s+x,0); const p=t?v/t*100:0; return p>=5 ? p.toFixed(0)+'%' : ''; } },
         tooltip: { callbacks: { label: c => {
           const total = c.dataset.data.reduce((s,v)=>s+v,0);
           const pct = total ? (c.parsed/total*100).toFixed(1) : 0;
