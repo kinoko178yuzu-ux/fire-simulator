@@ -1190,10 +1190,10 @@ select:focus { border-color: var(--teal); }
       <div class="subtitle">社会保険完全版（介護保険・後期高齢者医療・年金繰り下げ対応）— 1000回試行で破綻確率を算出</div>
     </div>
     <div class="actions">
-      <button class="btn btn-cloud" id="cloudSyncBtn">☁️ 同期 <span id="syncStatusDot" class="sync-dot off"></span></button>
-      <button class="btn btn-primary" id="downloadBtn">💾 保存</button>
-      <button class="btn" id="uploadBtn">📂 読込</button>
-      <button class="btn btn-danger" id="resetBtn">初期化</button>
+      <button class="btn btn-cloud" id="cloudSyncBtn" title="合言葉を設定すると、スマホなど他の端末と全データを自動同期します">☁️ 同期 <span id="syncStatusDot" class="sync-dot off"></span></button>
+      <button class="btn btn-primary" id="downloadBtn" title="全データをJSONファイルとしてPCに書き出します（バックアップ用）">💾 バックアップ保存</button>
+      <button class="btn" id="uploadBtn" title="書き出したバックアップJSONを読み込んで、データを復元します">📂 バックアップ復元</button>
+      <button class="btn btn-danger" id="resetBtn" title="すべての入力・取込データを初期値に戻します">初期化</button>
     </div>
     <input type="file" id="fileInput" accept=".json,application/json" style="display:none;">
   </header>
@@ -1948,10 +1948,34 @@ select:focus { border-color: var(--teal); }
       <div class="card mode-div" id="highDivCard">
         <h3><span class="dot"></span>🏆 高配当株 管理</h3>
         <div style="font-size:13px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
-          スプレッドシートの高配当株管理をアプリに移行。<strong>初回だけ「管理シート」CSVを取込</strong>すれば、銘柄・業種・配当単価・景気区分がアプリに保存されます。以後は<strong>MFポートフォリオ貼付で保有数・株価だけ更新</strong>すれば、配当金・評価額・利回りを自動再計算します。
+          このカードでやることは2つ：<strong>STEP1＝保有銘柄を登録する</strong>（何を何株持っているか）→ <strong>STEP2＝配当の実績を取り込む</strong>（実際にいくら振り込まれたか）。STEP1が終わると下に損益・業種割合などの分析ダッシュボードが表示されます。
         </div>
+
+        <!-- はじめてガイド（保有銘柄が空のときだけ表示） -->
+        <div id="hdGuide" style="display:none;margin-bottom:10px;padding:12px 14px;background:#fdf6e9;border:1px solid var(--amber,#d97706);border-radius:8px;font-size:13px;line-height:1.9;">
+          <b style="color:var(--amber,#d97706);">🚀 はじめてガイド — 保有銘柄がまだ登録されていません</b><br>
+          ① Googleスプレッドシートの「管理シート」を開く → メニューの <b>ファイル → ダウンロード → カンマ区切り（.csv）</b><br>
+          ② <button type="button" onclick="const d=document.getElementById('hdImportDetails');d.open=true;document.getElementById('hdCsvInput').click();" style="font-size:13px;padding:4px 14px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📁 ダウンロードしたCSVを選ぶ</button>　← このボタンを押してさっきのファイルを選ぶだけ<br>
+          ③ 下に分析ダッシュボード（損益・業種割合）が出たら完了。続けて STEP2 で配当実績も取り込めます
+        </div>
+
+        <!-- STEP1: 保有銘柄 -->
+        <details style="margin-bottom:10px;" id="hdImportDetails">
+          <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📥 STEP1：保有銘柄を取り込む・更新する</summary>
+          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">🅐 初回だけ：Googleシート「管理シート」のCSVを選択 <span style="font-weight:400;color:var(--ink-mute);">→ 銘柄・保有数・業種・配当単価が全部登録されます</span></div>
+          <input type="file" id="hdCsvInput" accept=".csv,text/csv" style="font-size:12.5px;margin-bottom:4px;">
+          <div style="font-size:12px;color:var(--ink-mute);margin-bottom:10px;">Googleシート側の操作：ファイル → ダウンロード → カンマ区切り（.csv）</div>
+          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">🅑 2回目以降の更新：マネーフォワードの表をコピーして貼り付け <span style="font-weight:400;color:var(--ink-mute);">→ 保有数と株価だけが最新化されます</span></div>
+          <div style="font-size:12px;color:var(--ink-mute);margin-bottom:6px;">マネフォ側の操作：<b>資産 → ポートフォリオ → 「株式（現物）」の表</b>を、マウスで表全体をなぞって選択 → コピー（Cmd+C）→ 下の欄に貼り付け（Cmd+V）→ ボタンを押す。複数口座分まとめてOK。</div>
+          <textarea id="hdPasteArea" rows="4" placeholder="ここにマネフォの表を貼り付け（例：1343	NFJ-REIT	215	1,886	1,914	411,510円 …）" style="width:100%;font-size:12.5px;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:var(--bg-subtle);padding:8px;box-sizing:border-box;"></textarea>
+          <button type="button" id="hdPasteBtn" style="width:100%;margin-top:6px;padding:8px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">貼付データで保有数・株価を更新</button>
+          <div id="hdImportResult" style="font-size:12.5px;margin-top:6px;"></div>
+        </details>
+
+        <!-- STEP2: 配当実績 -->
         <div style="margin-bottom:10px;padding:10px 14px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;">
-          <div style="font-size:14px;font-weight:700;color:var(--ink-soft);margin-bottom:8px;">🏢 銘柄別 実績CSV 取込</div>
+          <div style="font-size:14px;font-weight:700;color:var(--ink-soft);margin-bottom:2px;">💰 STEP2：配当の実績を取り込む（証券会社CSV）</div>
+          <div style="font-size:12px;color:var(--ink-mute);margin-bottom:8px;">ボタンを押すと証券会社のサイトが開き、ログイン後に配当CSVを自動で取得してアプリに反映します（SBIは全自動／楽天は配当ページを開くだけ）。</div>
           <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:10px;">
             <label style="font-size:12.5px;color:var(--ink-soft);font-weight:700;">口座（名義）<span style="font-weight:400;color:var(--ink-mute);">※楽天の自動取得用（SBIは私固定）</span>&ensp;
               <select id="divBrokerLabel" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">
@@ -1982,16 +2006,6 @@ select:focus { border-color: var(--teal); }
             <div id="divToBudgetStatus" style="font-size:12.5px;margin-top:6px;min-height:16px;"></div>
           </div>
         </div>
-        <details style="margin-bottom:10px;" id="hdImportDetails">
-          <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📥 データの取込（CSV / MF貼付）</summary>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">① 初回移行：Googleシート「管理シート」をCSVエクスポートして取込</div>
-          <input type="file" id="hdCsvInput" accept=".csv,text/csv" style="font-size:12.5px;margin-bottom:4px;">
-          <div style="font-size:12px;color:var(--ink-mute);margin-bottom:10px;">ファイル→ダウンロード→カンマ区切り(.csv) で出力したものを選択。業種・配当単価・景気区分も取り込みます。</div>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">② 以後の更新：MFポートフォリオ「株式（現物）」表を貼り付け</div>
-          <textarea id="hdPasteArea" rows="4" placeholder="1343&#9;NFJ-REIT&#9;215&#9;1,886&#9;1,914&#9;411,510円 …（複数口座OK・米国ETF対応・自動で合算）" style="width:100%;font-size:12.5px;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:var(--bg-subtle);padding:8px;box-sizing:border-box;"></textarea>
-          <button type="button" id="hdPasteBtn" style="width:100%;margin-top:6px;padding:8px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">貼付データで保有数・株価を更新</button>
-          <div id="hdImportResult" style="font-size:12.5px;margin-top:6px;"></div>
-        </details>
         <details style="margin-bottom:10px;" id="hdEditorDetails">
           <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">✏️ 銘柄の編集（業種・配当単価・支払月）</summary>
           <div style="font-size:12px;color:var(--ink-mute);margin:6px 0 8px;">業種を選ぶと景気区分は自動。配当単価はIR BANK / Yahoo!で調べて入力（MFには配当データが無いため）。支払月はカンマ区切り（例：6,12）。</div>
@@ -3588,9 +3602,12 @@ function renderDivPerStock(){
 function renderHighDiv(){
   const host=document.getElementById('hdDashboard'); if(!host) return;
   const rows=pfRows();
+  // 保有銘柄が空のときだけ「はじめてガイド」を表示
+  const guide=document.getElementById('hdGuide');
+  if(guide) guide.style.display = rows.length ? 'none' : 'block';
   if(!rows.length){
     destroyHdCharts();
-    host.innerHTML='<div style="font-size:13px;color:var(--ink-mute);padding:8px;">まだデータがありません。上の「データの取込」から、Googleシート「管理シート」のCSVを取り込んでください。</div>';
+    host.innerHTML='<div style="font-size:13px;color:var(--ink-mute);padding:8px;">保有銘柄が登録されると、ここに損益・業種割合・配当の分析ダッシュボードが表示されます（上の🚀はじめてガイド参照）。</div>';
     return;
   }
   const sum=(f)=>rows.reduce((s,r)=>s+f(r),0);
