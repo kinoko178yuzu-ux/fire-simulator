@@ -62,6 +62,13 @@ def fetch_sbi(page, days: int):
     out = OUT_DIR / f"sbi_dividends_{to:%Y%m%d}.csv"
     download.save_as(str(out))
     print(f"[SBI] 保存しました → {out}")
+    print(f"\nアプリへのドラッグ取込が完了したら Enter を押してください（CSVを自動削除します）...")
+    input()
+    try:
+        out.unlink()
+        print(f"[SBI] {out.name} を削除しました ✓")
+    except Exception as e:
+        print(f"[SBI] ファイル削除に失敗しました: {e}（手動で削除してください）")
     return out
 
 
@@ -112,6 +119,13 @@ def fetch_rakuten(ctx, page):
     out = OUT_DIR / f"rakuten_dividends_{datetime.date.today():%Y%m%d}.csv"
     download.save_as(str(out))
     print(f"[楽天] 保存しました → {out}")
+    print(f"\nアプリへのドラッグ取込が完了したら Enter を押してください（CSVを自動削除します）...")
+    input()
+    try:
+        out.unlink()
+        print(f"[楽天] {out.name} を削除しました ✓")
+    except Exception as e:
+        print(f"[楽天] ファイル削除に失敗しました: {e}（手動で削除してください）")
     return out
 
 

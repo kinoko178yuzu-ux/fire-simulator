@@ -1,4 +1,5 @@
-*.csv
-_mftest.csv
-収入・支出詳細*.csv
-night_task.md
+.DS_Store
+.claude/
+__pycache__/
+*.pyc
+index.html.bak_*
