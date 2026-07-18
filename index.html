@@ -2026,6 +2026,13 @@ select:focus { border-color: var(--teal); }
           </div>
         </details>
         <input type="hidden" id="divPortfolioJson" value="{}">
+        <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:8px;font-size:12.5px;color:var(--ink-soft);">
+          <span style="font-weight:700;">⚙️ 表示設定</span>
+          <label>配当金の表示&ensp;<select id="hdDivDisplay" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">
+            <option value="net" selected>税引後</option><option value="gross">税引前</option></select></label>
+          <label>業種割合の基準&ensp;<select id="hdSectorBasis" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">
+            <option value="evalv" selected>評価額</option><option value="purchase">購入額</option></select></label>
+        </div>
         <div id="hdDashboard"></div>
       </div>
 
@@ -3295,9 +3302,14 @@ function pfRows(){
     const sector=s.sector||'その他';
     const foreign=hdIsForeign(sector);
     const months=(Array.isArray(s.months)&&s.months.length)?s.months:(HD_PAY_MONTHS[code]||[]);
+    // NISA保有分は国内課税なし（米国株の源泉10%はNISAでも控除される）
+    const nisaSh=Math.min(+s.nisaShares||0, shares);
+    const taxable=shares? (shares-nisaSh)/shares : 1;
+    const afterUS=foreign? dividend*(1-HD_US_WHT) : dividend;
+    const net=Math.round(afterUS*(1-HD_JP_TAX*taxable));
     return { code, name:s.name||code, sector, cyc:s.cyc||'', foreign, months,
-      shares, price:+s.price||0, cost:+s.cost||0, dps:+s.dps||0,
-      evalv, purchase, dividend, net:Math.round(hdAfterTax(dividend,foreign)), pl:evalv-purchase,
+      shares, nisaShares:nisaSh, price:+s.price||0, cost:+s.cost||0, dps:+s.dps||0,
+      evalv, purchase, dividend, net, pl:evalv-purchase,
       ynow: evalv? dividend/evalv*100 : 0, ycost: purchase? dividend/purchase*100 : 0 };
   });
 }
@@ -3325,8 +3337,10 @@ function renderHdTop20(){
   const sel=document.getElementById('hdTopSector'), body=document.getElementById('hdTop20Body');
   if(!sel||!body) return;
   const s=sel.value;
-  const list=hdLastRows.filter(r=>s==='__all__'||r.sector===s).sort((a,b)=>b.dividend-a.dividend).slice(0,20);
-  body.innerHTML=list.map((r,i)=>`<tr><td style="text-align:right;color:var(--ink-mute);">${i+1}</td><td>${r.code}</td><td style="text-align:left;">${r.name}</td><td style="text-align:left;color:var(--ink-mute);font-size:11.5px;">${r.sector}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">${yenComma(r.dividend)}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--ink-mute);">該当なし</td></tr>';
+  const disp=(document.getElementById('hdDivDisplay')||{}).value||'net';
+  const dv=r=> disp==='gross'? r.dividend : r.net;
+  const list=hdLastRows.filter(r=>s==='__all__'||r.sector===s).sort((a,b)=>dv(b)-dv(a)).slice(0,20);
+  body.innerHTML=list.map((r,i)=>`<tr><td style="text-align:right;color:var(--ink-mute);">${i+1}</td><td>${r.code}</td><td style="text-align:left;">${r.name}</td><td style="text-align:left;color:var(--ink-mute);font-size:11.5px;">${r.sector}</td><td style="text-align:right;font-family:'JetBrains Mono',monospace;font-weight:700;">${yenComma(Math.round(dv(r)))}</td></tr>`).join('') || '<tr><td colspan="5" style="color:var(--ink-mute);">該当なし</td></tr>';
 }
 
 /** 銘柄エディタ（業種・配当単価・支払月を編集／景気区分は業種から自動） */
@@ -3353,21 +3367,58 @@ function renderHdEditor(){
       <td style="font-size:12px;color:var(--ink-mute);" class="hd-e-cyc">${s.cyc||'–'}</td>
       <td><input class="hd-e-dps" type="number" value="${dps||''}" placeholder="円/株" style="width:72px;font-size:12.5px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;text-align:right;font-family:inherit;"></td>
       <td><input class="hd-e-months" value="${months}" placeholder="6,12" style="width:60px;font-size:12.5px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;font-family:inherit;"></td>
+      <td><input class="hd-e-nisa" type="number" value="${+s.nisaShares||''}" placeholder="0" min="0" title="NISA口座で保有している株数（全株NISAなら保有数と同じ）。その分は国内課税なしで税引後配当を計算" style="width:60px;font-size:12.5px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;text-align:right;font-family:inherit;"></td>
       ${hdLinks(code)}</tr>`;
   }).join('');
-  host.innerHTML=`<table class="bg-table" style="min-width:560px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>景気</th><th>配当単価</th><th>支払月</th><th>IR</th><th>Y!</th></tr></thead><tbody>${rows}</tbody></table>`;
+  host.innerHTML=`<div style="margin-bottom:6px;">
+      <button type="button" id="hdAutoNisaBtn" style="font-size:12px;padding:4px 12px;background:var(--teal-bg);color:var(--teal-deep);border:1px solid var(--teal);border-radius:5px;cursor:pointer;font-family:inherit;font-weight:600;">🏦 NISA保有数を配当CSVから自動判定</button>
+      <span style="font-size:11.5px;color:var(--ink-mute);margin-left:6px;">取込済みCSVの口座区分（NISA成長投資枠など）から推定します。手入力での修正も可。</span>
+    </div>
+    <table class="bg-table" style="min-width:640px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>景気</th><th>配当単価</th><th>支払月</th><th>NISA株数</th><th>IR</th><th>Y!</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const anBtn=document.getElementById('hdAutoNisaBtn');
+  if(anBtn) anBtn.addEventListener('click', hdAutoNisa);
   host.querySelectorAll('tr[data-code]').forEach(tr=>{
     const code=tr.dataset.code;
-    const sec=tr.querySelector('.hd-e-sector'), dpsEl=tr.querySelector('.hd-e-dps'), monEl=tr.querySelector('.hd-e-months');
+    const sec=tr.querySelector('.hd-e-sector'), dpsEl=tr.querySelector('.hd-e-dps'), monEl=tr.querySelector('.hd-e-months'), nisaEl=tr.querySelector('.hd-e-nisa');
     const commit=()=>{ const pp=getPortfolio(); if(!pp[code]) return;
       pp[code].sector=sec.value||'未設定';
       pp[code].cyc=HD_SECTOR_CYC[sec.value]||'';
       pp[code].dps=+dpsEl.value||0;
       pp[code].months=monEl.value.split(',').map(x=>parseInt(x.trim(),10)).filter(x=>x>=1&&x<=12);
+      if(nisaEl) pp[code].nisaShares=Math.max(+nisaEl.value||0,0);
       setPortfolio(pp); renderHighDiv(); renderDivCompare(); renderHdEditor();
     };
     sec.addEventListener('change',commit); dpsEl.addEventListener('change',commit); monEl.addEventListener('change',commit);
+    if(nisaEl) nisaEl.addEventListener('change',commit);
   });
+}
+
+/** 配当CSVの口座区分から各銘柄のNISA保有数を推定（最新の支払時点の区分・数量を使用） */
+function hdAutoNisa(){
+  const p=getPortfolio();
+  const tx=getActual().txns.filter(t=>typeof t.nisa==='boolean');
+  if(!tx.length){
+    alert('口座区分つきの配当データがまだありません。\nSTEP2で証券会社CSVを取り込み直すと（再取込は重複しません）、口座列からNISAを自動判定できます。');
+    return;
+  }
+  const byCode={};
+  tx.forEach(t=>{ (byCode[t.code]=byCode[t.code]||[]).push(t); });
+  let set=0, skipped=0;
+  Object.keys(byCode).forEach(code=>{
+    if(!p[code]){ skipped++; return; }
+    const arr=byCode[code];
+    const latest=arr.map(t=>t.date).sort().pop();
+    const rows=arr.filter(t=>t.date===latest);
+    const allNisa=rows.every(t=>t.nisa), anyNisa=rows.some(t=>t.nisa);
+    const sh=+p[code].shares||0;
+    let ns=0;
+    if(allNisa) ns=sh;                                                    // 全部NISA口座からの支払い
+    else if(anyNisa) ns=Math.min(rows.filter(t=>t.nisa).reduce((s,t)=>s+(+t.qty||0),0), sh); // 混在→NISA分の数量
+    p[code].nisaShares=ns; set++;
+  });
+  setPortfolio(p);
+  renderHdEditor(); renderHighDiv(); renderDivCompare();
+  alert(`${set}銘柄のNISA保有数を判定しました（最新の配当支払時点の口座区分より）。\n表の「NISA株数」列で確認・修正できます。${skipped?`\n※ポートフォリオに無い${skipped}銘柄はスキップ`:''}`);
 }
 /** 手動で銘柄を追加 */
 function hdManualAdd(){
@@ -3403,16 +3454,23 @@ function parseBrokerDividendCSV(text){
   if(fmt==='rakuten'){
     const H=rows[hi].map(x=>(x||'').trim());
     const di=H.indexOf('入金日'), cdi=H.indexOf('銘柄コード'), yi=H.findIndex(c=>c.indexOf('受取金額')>=0);
+    const ai=H.indexOf('口座'), qi=H.findIndex(c=>c.indexOf('数量')>=0);   // NISA判定用
     for(let i=hi+1;i<rows.length;i++){ const r=rows[i]; if(!r||r.length<=yi) continue;
       const code=(r[cdi]||'').trim().toUpperCase(); if(!HD_CODE_RE.test(code)) continue;
       const yen=hdNum(r[yi]); const date=hdToYMD(r[di]); if(!date||!yen) continue;
-      out.push({date,code,yen,src:'楽天'}); }
+      const t={date,code,yen,src:'楽天'};
+      if(ai>=0){ t.nisa=/NISA/i.test(r[ai]||''); t.qty=qi>=0?hdNum(r[qi]):0; }
+      out.push(t); }
   } else {
+    const H2=rows[hi].map(x=>(x||'').trim());
+    const ai2=H2.findIndex(c=>/預り|口座/.test(c)), qi2=H2.findIndex(c=>/数量|株数/.test(c)); // NISA判定用
     for(let i=hi+1;i<rows.length;i++){ const r=rows[i].map(x=>(x||'').trim()); if(r.length<6||!r[0]) continue;
       if(!/\d{4}\/\d{1,2}\/\d{1,2}/.test(r[0])) continue;
       const mm=(r[3]||'').match(/(\d{3,4}[A-Z]?|[A-Z]{2,5})\s*$/); if(!mm) continue;
       const code=mm[1].toUpperCase(); const yen=hdNum(r[5]); const date=hdToYMD(r[0]); if(!date||!yen) continue;
-      out.push({date,code,yen,src:'SBI'}); }
+      const t={date,code,yen,src:'SBI'};
+      if(ai2>=0){ t.nisa=/NISA|ニーサ/i.test(r[ai2]||''); t.qty=qi2>=0?hdNum(r[qi2]):0; }
+      out.push(t); }
   }
   return out;
 }
@@ -3620,11 +3678,18 @@ function renderHighDiv(){
   const monthly = pfMonthly(rows);                         // 月別配当（税引前/税引後）
 
   // 業種集計（評価額）
-  const bySector={}; rows.forEach(r=>{ bySector[r.sector]=(bySector[r.sector]||0)+r.evalv; });
+  // ⚙️ 表示設定（税引前/後・業種割合の基準）
+  const hdDisp=(document.getElementById('hdDivDisplay')||{}).value||'net';       // net | gross
+  const hdBasis=(document.getElementById('hdSectorBasis')||{}).value||'evalv';   // evalv | purchase
+  const dispVal=r=> hdDisp==='gross'? r.dividend : r.net;
+  const dispLabel= hdDisp==='gross'? '税引前' : '税引後';
+  const basisLabel= hdBasis==='purchase'? '購入額' : '評価額';
+  const bySector={}; rows.forEach(r=>{ bySector[r.sector]=(bySector[r.sector]||0)+(r[hdBasis]||0); });
   const sectors=Object.keys(bySector).sort((a,b)=>bySector[b]-bySector[a]);
   // 景気区分
   const cyc={'景気敏感':0,'ディフェンシブ':0,'未分類':0};
-  rows.forEach(r=>{ cyc[r.cyc==='景気敏感'?'景気敏感':r.cyc==='ディフェンシブ'?'ディフェンシブ':'未分類']+=r.evalv; });
+  rows.forEach(r=>{ cyc[r.cyc==='景気敏感'?'景気敏感':r.cyc==='ディフェンシブ'?'ディフェンシブ':'未分類']+=(r[hdBasis]||0); });
+  const basisTotal = hdBasis==='purchase'? totalPur : totalEval;   // 業種・景気の割合の分母
   // 利回り別ヒストグラム
   const buckets=['~1.0','~1.5','~2.0','~2.5','~3.0','~3.5','~4.0','~4.5','~5.0','~5.5','~6.0','6.0以上'];
   const hist=new Array(buckets.length).fill(0);
@@ -3650,11 +3715,41 @@ function renderHighDiv(){
       <td style="text-align:right;color:${plc};">${r.pl>=0?'+':''}${yenComma(r.pl)}</td>
       <td style="text-align:right;color:${plc};font-weight:700;">${r.purchase>0?`${r.pl>=0?'+':''}${(r.pl/r.purchase*100).toFixed(1)}%`:'–'}</td>
       <td style="text-align:right;">${yenComma(r.dps)}</td>
-      <td style="text-align:right;font-weight:700;">${yenComma(r.dividend)}</td>
+      <td style="text-align:right;font-weight:700;">${yenComma(Math.round(dispVal(r)))}</td>
       <td style="text-align:right;">${r.ynow.toFixed(2)}%</td>
       <td style="text-align:right;color:var(--ink-mute);">${r.ycost.toFixed(2)}%</td>
       ${hdLinks(r.code)}</tr>`;
   }).join('');
+
+  // ③ 買い増し検討：集中警告＋候補（お手本シートの10%黄色警告を拡張）
+  const secPct={}; sectors.forEach(s=>{ secPct[s]=basisTotal? bySector[s]/basisTotal*100 : 0; });
+  const wPct=r=>totalEval? r.evalv/totalEval*100 : 0;
+  const heavyStocks=rows.filter(r=>wPct(r)>=10).sort((a,b)=>wPct(b)-wPct(a));
+  const heavySectors=sectors.filter(s=>secPct[s]>=25);
+  const sensPct=basisTotal? cyc['景気敏感']/basisTotal*100 : 0;
+  const defPct =basisTotal? cyc['ディフェンシブ']/basisTotal*100 : 0;
+  const warnItems=[];
+  heavyStocks.forEach(r=>warnItems.push(`🟡 <b>${r.code} ${r.name}</b> が1銘柄で <b>${wPct(r).toFixed(1)}%</b>（目安10%以下）`));
+  heavySectors.forEach(s=>warnItems.push(`🟠 業種「<b>${s}</b>」に <b>${secPct[s].toFixed(1)}%</b> 集中（目安25%以下）`));
+  if(sensPct>60||defPct>60) warnItems.push(`🔴 景気敏感 ${sensPct.toFixed(0)}% / ディフェンシブ ${defPct.toFixed(0)}% — バランスが偏っています（目安 50:50±10）`);
+  const buyScore=r=>r.ynow - wPct(r)*0.5 - (secPct[r.sector]||0)*0.1;
+  const buyCands=rows.filter(r=>wPct(r)<8 && r.dps>0).sort((a,b)=>buyScore(b)-buyScore(a)).slice(0,12);
+  const buyRows=buyCands.map((r,i)=>{ const w=wPct(r), sp=secPct[r.sector]||0; const plp=r.purchase>0? r.pl/r.purchase*100 : 0;
+    return `<tr><td style="text-align:right;color:var(--ink-mute);">${i+1}</td><td>${r.code}</td><td style="text-align:left;">${r.name}</td>
+      <td style="text-align:left;color:var(--ink-mute);font-size:11.5px;">${r.sector} <span style="color:${sp>=25?'var(--rose)':'var(--ink-mute)'};">(${sp.toFixed(0)}%)</span></td>
+      <td style="text-align:right;">${w.toFixed(1)}%</td>
+      <td style="text-align:right;font-weight:700;color:var(--teal-deep);">${r.ynow.toFixed(2)}%</td>
+      <td style="text-align:right;color:var(--ink-mute);">${r.ycost.toFixed(2)}%</td>
+      <td style="text-align:right;color:${plp<0?'var(--rose)':'var(--green)'};">${plp>=0?'+':''}${plp.toFixed(1)}%</td></tr>`; }).join('');
+  const buySection=`
+    <details style="margin-bottom:14px;" open>
+      <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">🛒 買い増し検討（集中警告と候補）</summary>
+      ${warnItems.length?`<div style="background:#fdf6e9;border:1px solid var(--amber,#d97706);border-radius:8px;padding:9px 12px;margin:6px 0 10px;font-size:12.5px;line-height:1.8;">${warnItems.join('<br>')}</div>`
+        :`<div style="font-size:12.5px;color:var(--green);margin:6px 0 10px;">✅ 集中しすぎの銘柄・業種はありません（1銘柄10%・1業種25%・景気バランス50:50±10 の目安内）。</div>`}
+      <div style="font-size:12px;color:var(--ink-mute);margin-bottom:4px;">おすすめ順＝時価利回りが高く、銘柄構成比と業種割合が小さい順（スコア＝時価利回り − 構成比×0.5 − 業種割合×0.1）。構成比8%以上の銘柄は除外。</div>
+      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:640px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種(割合)</th><th>構成比</th><th>利回り時価</th><th>利回り取得</th><th>損益%</th></tr></thead><tbody>${buyRows||'<tr><td colspan="8" style="color:var(--ink-mute);">候補なし（配当単価が未設定の銘柄は対象外）</td></tr>'}</tbody></table></div>
+      <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">⚠️ これは保有銘柄の機械的な並び替えであり、投資助言ではありません。購入判断はIR・業績をご自身で確認してください。</div>
+    </details>`;
 
   host.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px;">
@@ -3666,11 +3761,11 @@ function renderHighDiv(){
       ${card('銘柄数', rows.length+'')}
     </div>
     <div style="margin-bottom:14px;">
-      <div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">配当金支払額（月別・税引前）</div>
+      <div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">配当金支払額（月別・${dispLabel}）</div>
       <div style="position:relative;height:170px;"><canvas id="hdMonthChart"></canvas></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
-      <div><div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">業種割合（評価額）</div><div style="position:relative;height:${Math.max(sectors.length*18,160)}px;"><canvas id="hdSectorChart"></canvas></div></div>
+      <div><div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">業種割合（${basisLabel}）</div><div style="position:relative;height:${Math.max(sectors.length*18,160)}px;"><canvas id="hdSectorChart"></canvas></div></div>
       <div>
         <div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">景気敏感 / ディフェンシブ</div><div style="position:relative;height:150px;"><canvas id="hdCycChart"></canvas></div>
         <div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin:10px 0 4px;">銘柄数（利回り別）</div><div style="position:relative;height:150px;"><canvas id="hdYieldChart"></canvas></div>
@@ -3680,12 +3775,13 @@ function renderHighDiv(){
       <div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">銘柄構成比（評価額・景気敏感 / ディフェンシブ）</div>
       <div style="position:relative;height:300px;"><canvas id="hdTreeChart"></canvas></div>
     </div>
+    ${buySection}
     <details style="margin-bottom:10px;" open><summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">🏅 配当金 Top20</summary>
       <div style="margin:4px 0 8px;"><label style="font-size:12.5px;color:var(--ink-soft);">業種 <select id="hdTopSector" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">${sectorOpts}</select></label></div>
       <div style="overflow-x:auto;"><table class="bg-table" style="min-width:420px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種</th><th>配当金</th></tr></thead><tbody id="hdTop20Body"></tbody></table></div>
     </details>
     <details><summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📋 全銘柄（${rows.length}）</summary>
-      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:940px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>保有数</th><th>取得単価</th><th>株価</th><th>評価額</th><th>割合</th><th>損益</th><th>損益%</th><th>配当単価</th><th>配当金</th><th>利回り時価</th><th>利回り取得</th><th>IR</th><th>Y!</th></tr></thead><tbody>${allRows}</tbody></table></div>
+      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:940px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>保有数</th><th>取得単価</th><th>株価</th><th>評価額</th><th>割合</th><th>損益</th><th>損益%</th><th>配当単価</th><th>配当金(${dispLabel})</th><th>利回り時価</th><th>利回り取得</th><th>IR</th><th>Y!</th></tr></thead><tbody>${allRows}</tbody></table></div>
     </details>`;
 
   // チャート
@@ -3700,7 +3796,7 @@ function renderHighDiv(){
   const yc=document.getElementById('hdYieldChart');
   if(yc) hdCharts.yield=new Chart(yc.getContext('2d'),{type:'bar',plugins:DL,data:{labels:buckets,datasets:[{data:hist,backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:14}},plugins:{legend:{display:false},datalabels:{anchor:'end',align:'end',color:'#555',font:{size:10,weight:'700'},formatter:v=>v}},scales:{x:{ticks:{font:{size:9}}},y:{ticks:{font:{size:10},stepSize:5}}}}});
   const mc=document.getElementById('hdMonthChart');
-  if(mc) hdCharts.month=new Chart(mc.getContext('2d'),{type:'bar',plugins:DL,data:{labels:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],datasets:[{data:monthly.gross.map(v=>Math.round(v)),backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:16}},plugins:{legend:{display:false},datalabels:{anchor:'end',align:'end',color:'#555',font:{size:9,weight:'700'},formatter:v=>v?yenComma(v):'0'},tooltip:{callbacks:{label:c=>`${yenComma(c.parsed.y)}円`}}},scales:{x:{ticks:{font:{size:10}}},y:{ticks:{font:{size:10},callback:v=>(v/10000)+'万'}}}}});
+  if(mc) hdCharts.month=new Chart(mc.getContext('2d'),{type:'bar',plugins:DL,data:{labels:['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'],datasets:[{data:(hdDisp==='gross'?monthly.gross:monthly.net).map(v=>Math.round(v)),backgroundColor:'#0d6e6e'}]},options:{responsive:true,maintainAspectRatio:false,layout:{padding:{top:16}},plugins:{legend:{display:false},datalabels:{anchor:'end',align:'end',color:'#555',font:{size:9,weight:'700'},formatter:v=>v?yenComma(v):'0'},tooltip:{callbacks:{label:c=>`${yenComma(c.parsed.y)}円`}}},scales:{x:{ticks:{font:{size:10}}},y:{ticks:{font:{size:10},callback:v=>(v/10000)+'万'}}}}});
   // 銘柄構成比 ツリーマップ（景気敏感/ディフェンシブでグループ化・評価額で面積）
   const tc=document.getElementById('hdTreeChart');
   if(tc && Chart.registry.controllers.get('treemap')){
@@ -3761,6 +3857,11 @@ function initHighDiv(){
     e.target.value='';
     if(!files.length) return;
     showBrokerImportModal(files);
+  });
+  // ⚙️ 表示設定の変更で即再描画
+  ['hdDivDisplay','hdSectorBasis'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.addEventListener('change',()=>{ renderHighDiv(); renderDivCompare(); });
   });
   renderHighDiv(); renderDivCompare(); renderHdEditor();
 }
@@ -3927,7 +4028,7 @@ const INPUT_IDS = [
   'kokuhoMedicalRate','kokuhoSupportRate','kokuhoKaigoRate','kokuhoEqual','kokuhoKaigoEqual','kokuhoFlat',
   'kaigoInsMonthly','koukiRate','koukiFlat',
   'pensionMonthly','nenkinExempt','spouseDeduction',
-  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly','coastRate',
+  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly','coastRate','hdDivDisplay','hdSectorBasis',
   'pensionStartAge','taishokin','idecoCurrent','idecoMonthly',
   'targetFailRate','trials','bucket1Years','bucket2Years','bucket2Rate',
   'emergencyFund','cashYearsTarget','cashReturn'
