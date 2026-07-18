@@ -1733,6 +1733,17 @@ select:focus { border-color: var(--teal); }
           </div>
 
           <div class="subsection">
+            <div class="subsection-title">— 年金の計算前提 ★NEW</div>
+            <div class="field">
+              <select id="pensionMode" style="width:100%;font-size:13px;padding:6px 8px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">
+                <option value="solo" selected>夫のみ（妻の基礎年金を含めない・保守）</option>
+                <option value="couple">夫婦満額（妻の基礎年金も含める・参考）</option>
+              </select>
+              <div class="help">死別や制度変更に備え、<b>妻の基礎年金（約82万/年）をアテにしない保守的な前提</b>が既定。破綻確率の実行時には、もう一方の前提の結果も参考表示されます。</div>
+            </div>
+          </div>
+
+          <div class="subsection">
             <div class="subsection-title">— 退職金（任意）★NEW</div>
             <div class="field">
               <div class="field-row"><span class="field-label">退職金概算</span></div>
@@ -1954,27 +1965,27 @@ select:focus { border-color: var(--teal); }
         <!-- はじめてガイド（保有銘柄が空のときだけ表示） -->
         <div id="hdGuide" style="display:none;margin-bottom:10px;padding:12px 14px;background:#fdf6e9;border:1px solid var(--amber,#d97706);border-radius:8px;font-size:13px;line-height:1.9;">
           <b style="color:var(--amber,#d97706);">🚀 はじめてガイド — 保有銘柄がまだ登録されていません</b><br>
-          ① Googleスプレッドシートの「管理シート」を開く → メニューの <b>ファイル → ダウンロード → カンマ区切り（.csv）</b><br>
-          ② <button type="button" onclick="const d=document.getElementById('hdImportDetails');d.open=true;document.getElementById('hdCsvInput').click();" style="font-size:13px;padding:4px 14px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📁 ダウンロードしたCSVを選ぶ</button>　← このボタンを押してさっきのファイルを選ぶだけ<br>
-          ③ 下に分析ダッシュボード（損益・業種割合）が出たら完了。続けて STEP2 で配当実績も取り込めます
+          ① マネーフォワードの <b>資産 → ポートフォリオ → 「株式（現物）」の表</b>を、マウスで表全体をなぞって選択 → コピー（Cmd+C）<br>
+          ② <button type="button" onclick="const d=document.getElementById('hdImportDetails');d.open=true;setTimeout(()=>{const t=document.getElementById('hdPasteArea');if(t){t.scrollIntoView({behavior:'smooth',block:'center'});t.focus();}},100);" style="font-size:13px;padding:4px 14px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📋 貼付欄を開く</button>　← 開いた欄に貼り付け（Cmd+V）てボタンを押すだけ<br>
+          ③ 主要な高配当株75銘柄は<b>業種・配当単価も自動で入ります</b>（内蔵マスタ）。マスタ外の銘柄だけ「✏️ 銘柄の編集」で補完 → 下に分析ダッシュボードが出たら完了。続けて STEP2 で配当実績もどうぞ
         </div>
 
         <!-- STEP1: 保有銘柄 -->
         <details style="margin-bottom:10px;" id="hdImportDetails">
-          <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📥 STEP1：保有銘柄を取り込む・更新する</summary>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">🅐 初回だけ：Googleシート「管理シート」のCSVを選択 <span style="font-weight:400;color:var(--ink-mute);">→ 銘柄・保有数・業種・配当単価が全部登録されます</span></div>
-          <input type="file" id="hdCsvInput" accept=".csv,text/csv" style="font-size:12.5px;margin-bottom:4px;">
-          <div style="font-size:12px;color:var(--ink-mute);margin-bottom:10px;">Googleシート側の操作：ファイル → ダウンロード → カンマ区切り（.csv）</div>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">🅑 2回目以降の更新：マネーフォワードの表をコピーして貼り付け <span style="font-weight:400;color:var(--ink-mute);">→ 保有数と株価だけが最新化されます</span></div>
+          <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📥 STEP1：保有銘柄を取り込む・更新する<span id="pfFreshness" style="font-weight:400;color:var(--ink-mute);font-size:11.5px;margin-left:10px;"></span></summary>
+          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">🅐 マネーフォワードの表をコピーして貼り付け（初回も更新もこれだけ） <span style="font-weight:400;color:var(--ink-mute);">→ 保有数・株価を登録。新しい銘柄は内蔵マスタ（75銘柄）で業種・配当単価も自動補完</span></div>
           <div style="font-size:12px;color:var(--ink-mute);margin-bottom:6px;">マネフォ側の操作：<b>資産 → ポートフォリオ → 「株式（現物）」の表</b>を、マウスで表全体をなぞって選択 → コピー（Cmd+C）→ 下の欄に貼り付け（Cmd+V）→ ボタンを押す。複数口座分まとめてOK。</div>
           <textarea id="hdPasteArea" rows="4" placeholder="ここにマネフォの表を貼り付け（例：1343	NFJ-REIT	215	1,886	1,914	411,510円 …）" style="width:100%;font-size:12.5px;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:var(--bg-subtle);padding:8px;box-sizing:border-box;"></textarea>
           <button type="button" id="hdPasteBtn" style="width:100%;margin-top:6px;padding:8px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">貼付データで保有数・株価を更新</button>
           <div id="hdImportResult" style="font-size:12.5px;margin-top:6px;"></div>
+          <div style="font-size:12.5px;color:var(--ink-soft);margin:12px 0 4px;font-weight:700;">🅑 （代替）Googleシート「管理シート」のCSVを取込 <span style="font-weight:400;color:var(--ink-mute);">→ シートで管理してきた業種・配当単価ごと一括移行できます</span></div>
+          <input type="file" id="hdCsvInput" accept=".csv,text/csv" style="font-size:12.5px;margin-bottom:4px;">
+          <div style="font-size:12px;color:var(--ink-mute);">Googleシート側の操作：ファイル → ダウンロード → カンマ区切り（.csv）</div>
         </details>
 
         <!-- STEP2: 配当実績 -->
         <div style="margin-bottom:10px;padding:10px 14px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;">
-          <div style="font-size:14px;font-weight:700;color:var(--ink-soft);margin-bottom:2px;">💰 STEP2：配当の実績を取り込む（証券会社CSV）</div>
+          <div style="font-size:14px;font-weight:700;color:var(--ink-soft);margin-bottom:2px;">💰 STEP2：配当の実績を取り込む（証券会社CSV）<span id="brokerFreshness" style="font-weight:400;color:var(--ink-mute);font-size:11.5px;margin-left:10px;"></span></div>
           <div style="font-size:12px;color:var(--ink-mute);margin-bottom:8px;">ボタンを押すと証券会社のサイトが開き、ログイン後に配当CSVを自動で取得してアプリに反映します（SBIは全自動／楽天は配当ページを開くだけ）。</div>
           <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:10px;">
             <label style="font-size:12.5px;color:var(--ink-soft);font-weight:700;">口座（名義）<span style="font-weight:400;color:var(--ink-mute);">※楽天の自動取得用（SBIは私固定）</span>&ensp;
@@ -2044,6 +2055,7 @@ select:focus { border-color: var(--teal); }
         </div>
         <input type="hidden" id="dividendListJson" value="[]">
         <input type="hidden" id="divActualJson" value='{"txns":[]}'>
+        <input type="hidden" id="dataMetaJson" value="{}">
         <div id="divCompare"></div>
         <details style="margin-top:10px;" id="divPerStockDetails">
           <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">▶ 銘柄別 予定 vs 実績</summary>
@@ -3233,6 +3245,7 @@ const HD_CODE_RE = /^(\d{3,4}[A-Z]?|[A-Z]{2,5})$/;
 const HD_JP_TAX = 0.20315;   // 国内 配当課税
 const HD_US_WHT = 0.10;      // 米国 源泉徴収（外国税額控除前）
 /** 銘柄コード→支払月（スプレッドシート集計タブから移行。新規銘柄は未設定でOK・後から編集可） */
+const HD_MASTER = {"1343":{"s":"ETF・他","d":92.0},"1489":{"s":"ETF・他","d":91.0},"1723":{"s":"建設業","d":56.0},"1928":{"s":"建設業","d":145.0},"1951":{"s":"建設業","d":80.0},"1976":{"s":"建設業","d":65.0},"1980":{"s":"建設業","d":85.0},"2003":{"s":"食料品","d":70.0},"2124":{"s":"サービス業","d":38.0},"2169":{"s":"サービス業","d":74.0},"2296":{"s":"食料品","d":155.0},"2317":{"s":"情報・通信業","d":18.0},"2391":{"s":"サービス業","d":44.0},"2393":{"s":"サービス業","d":74.0},"2659":{"s":"小売業","d":110.0},"3003":{"s":"不動産業","d":67.0},"3076":{"s":"卸売業","d":125.0},"3231":{"s":"不動産業","d":44.0},"3333":{"s":"小売業","d":50.0},"3771":{"s":"情報・通信業","d":70.0},"3817":{"s":"情報・通信業","d":220.0},"3834":{"s":"情報・通信業","d":25.0},"4008":{"s":"化学","d":44.0},"4042":{"s":"化学","d":100.0},"4248":{"s":"化学","d":36.0},"4345":{"s":"サービス業","d":29.0},"4401":{"s":"化学","d":112.0},"4540":{"s":"医薬品","d":147.0},"4641":{"s":"サービス業","d":108.0},"4752":{"s":"情報・通信業","d":66.0},"4832":{"s":"情報・通信業","d":68.0},"5186":{"s":"ゴム製品","d":160.0},"5334":{"s":"ガラス・土石製品","d":205.0},"5388":{"s":"ガラス・土石製品","d":40.0},"5464":{"s":"鉄鋼","d":36.0},"6073":{"s":"サービス業","d":62.0},"6345":{"s":"機械","d":60.0},"6381":{"s":"機械","d":87.0},"6432":{"s":"機械","d":210.0},"6458":{"s":"機械","d":50.0},"6539":{"s":"サービス業","d":56.0},"6652":{"s":"電気機器","d":130.0},"6785":{"s":"電気機器","d":90.0},"7292":{"s":"輸送用機器","d":240.0},"7438":{"s":"卸売業","d":52.0},"7483":{"s":"卸売業","d":110.0},"7723":{"s":"精密機器","d":113.0},"7749":{"s":"精密機器","d":100.0},"7820":{"s":"その他製品","d":36.0},"7921":{"s":"その他製品","d":120.0},"7931":{"s":"化学","d":145.0},"7989":{"s":"金属製品","d":70.0},"7994":{"s":"その他製品","d":104.0},"8058":{"s":"卸売業","d":110.0},"8130":{"s":"卸売業","d":155.0},"8309":{"s":"銀行業","d":185.0},"8584":{"s":"その他金融業","d":200.0},"8593":{"s":"その他金融業","d":46.0},"8725":{"s":"保険業","d":160.0},"9057":{"s":"陸運業","d":96.0},"9069":{"s":"陸運業","d":50.0},"9233":{"s":"空運業","d":49.0},"9303":{"s":"倉庫・運輸関連業","d":103.0},"9304":{"s":"倉庫・運輸関連業","d":56.0},"9364":{"s":"倉庫・運輸関連業","d":205.0},"9368":{"s":"倉庫・運輸関連業","d":34.0},"9381":{"s":"倉庫・運輸関連業","d":100.0},"9513":{"s":"電気・ガス業","d":100.0},"9769":{"s":"サービス業","d":103.0},"9795":{"s":"サービス業","d":89.0},"9986":{"s":"卸売業","d":105.0},"208A":{"s":"情報・通信業","d":90.0},"HDV":{"s":"米国ETF","d":128.0},"SPYD":{"s":"米国ETF","d":321.0},"VYM":{"s":"米国ETF","d":567.0}};  // 管理シート由来の銘柄マスタ（業種・配当単価）。マネフォ貼付時の自動補完に使用
 const HD_PAY_MONTHS = {"1343":[3,6,9,12],"1489":[2,5,8,11],"1723":[6,12],"1928":[4,10],"1951":[6,12],"1976":[6,12],"1980":[6,12],"2003":[6,12],"2124":[3],"2169":[3,9],"2296":[3,6,9,12],"2317":[6,12],"2391":[4,10],"2393":[6],"2659":[5],"3003":[3,9],"3076":[3,9],"3231":[6,12],"3333":[5,11],"3771":[6],"3817":[6,12],"3834":[6,12],"4008":[6,12],"4042":[6,12],"4248":[3,9],"4345":[6,12],"4401":[6,12],"4540":[6,12],"4641":[3,9],"4752":[6],"4832":[6,12],"5186":[6,12],"5334":[6,12],"5388":[6,12],"5464":[6,12],"6073":[6,12],"6345":[6,12],"6381":[6,12],"6432":[5],"6458":[6,12],"6539":[6],"6652":[6,12],"6785":[3,9],"7292":[6,12],"7438":[6,12],"7483":[6,12],"7723":[6,12],"7749":[6,12],"7820":[6,12],"7921":[2,8],"7931":[6,12],"7989":[3,9],"7994":[6,12],"8058":[6,12],"8130":[6,12],"8309":[6,12],"8584":[6,12],"8593":[6,12],"8725":[6,12],"9057":[6,12],"9069":[6,12],"9233":[6,12],"9303":[6,12],"9304":[6,12],"9364":[6,12],"9368":[6,12],"9381":[5,11],"9513":[6,12],"9769":[6,12],"9795":[6,12],"9986":[6,12],"208A":[3,6,9,12],"HDV":[3,6,9,12],"SPYD":[3,6,9,12],"VYM":[3,6,9,12]};
 function hdIsForeign(sector){ return /米国|米ドル|海外|外国/.test(sector||''); }
 /** 業種→景気感応度（スプレッドシート「設定」タブのルールを移行）。業種を選べば景気区分は自動 */
@@ -3260,7 +3273,9 @@ function parseDivSheetCSV(text){
       months: (p[c[1]]&&p[c[1]].months&&p[c[1]].months.length) ? p[c[1]].months : (HD_PAY_MONTHS[c[1]]||[]) };
     n++;
   }
-  setPortfolio(p); return n;
+  setPortfolio(p);
+  if(typeof stampDataMeta==='function') stampDataMeta('portfolio');
+  return n;
 }
 
 /** MFポートフォリオ貼付 → 保有数・株価・取得単価のみ更新（業種/配当単価/景気区分は保持）
@@ -3286,9 +3301,16 @@ function refreshFromMF(text){
     const price = sh? Math.round(a.evalSum/sh) : 0;
     const cost  = sh? Math.round(a.purSum/sh) : 0;
     if(p[code]){ p[code].shares=sh; p[code].price=price; p[code].cost=cost; if(a.name) p[code].name=a.name; upd++; }
-    else { p[code]={name:a.name,sector:'未設定',cyc:'',shares:sh,cost,price,dps:0,months:HD_PAY_MONTHS[code]||[]}; add++; miss.push(code); }
+    else {
+      // 新規銘柄は内蔵マスタ（管理シート由来）で業種・配当単価を自動補完
+      const m=(typeof HD_MASTER!=='undefined')?HD_MASTER[code]:null;
+      p[code]={name:a.name,sector:m?m.s:'未設定',cyc:m?(HD_SECTOR_CYC[m.s]||''):'',shares:sh,cost,price,dps:m?+m.d:0,months:HD_PAY_MONTHS[code]||[]};
+      add++; if(!m) miss.push(code);
+    }
   });
-  setPortfolio(p); return {upd,add,miss};
+  setPortfolio(p);
+  if(typeof stampDataMeta==='function') stampDataMeta('portfolio');
+  return {upd,add,miss};
 }
 
 /** 計算済み明細行の配列を返す */
@@ -3562,8 +3584,31 @@ function importBrokerCSV(text, label){
   if(lab) list.forEach(t=>{ t.src=`${t.src}・${lab}`; });   // 出所にラベルを付与→私/奥さんが衝突しない
   const a=getActual(); const seen=new Set(a.txns.map(t=>`${t.date}|${t.code}|${t.yen}|${t.src}`));
   let added=0; list.forEach(t=>{ const k=`${t.date}|${t.code}|${t.yen}|${t.src}`; if(!seen.has(k)){ seen.add(k); a.txns.push(t); added++; } });
-  setActual(a); return added;
+  setActual(a);
+  if(typeof stampDataMeta==='function') stampDataMeta('broker');
+  return added;
 }
+/** データ鮮度（いつ取り込んだか）の記録と表示 */
+function getDataMeta(){ try{ return JSON.parse((document.getElementById('dataMetaJson')||{}).value||'{}'); }catch{ return {}; } }
+function stampDataMeta(key){
+  try{
+    const el=document.getElementById('dataMetaJson'); if(!el) return;
+    const o=getDataMeta(); const d=new Date();
+    o[key]=`${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    el.value=JSON.stringify(o);
+    if(typeof debouncedSave==='function' && !isApplyingCloud) debouncedSave();
+  }catch{}
+  renderFreshness();
+}
+function renderFreshness(){
+  const m=getDataMeta();
+  const b=document.getElementById('brokerFreshness');
+  if(b) b.textContent = m.broker? `（最終取込 ${m.broker}）` : '（未取込）';
+  const p=document.getElementById('pfFreshness');
+  if(p) p.textContent = m.portfolio? `（株価・保有数は ${m.portfolio} 取込時点）` : '（未取込）';
+}
+document.addEventListener('DOMContentLoaded', renderFreshness);
+
 function actualSumByCode(){ const m={}; getActual().txns.forEach(t=>{ m[t.code]=(m[t.code]||0)+t.yen; }); return m; }
 function actualPeriod(){ const ts=getActual().txns.map(t=>t.date).sort(); return ts.length?{from:ts[0],to:ts[ts.length-1],n:ts.length}:null; }
 
@@ -3758,7 +3803,7 @@ function renderHighDiv(){
       ${card('損益額', (totalPL>=0?'+':'')+yenComma(totalPL)+'円', `( ${plPct>=0?'+':''}${plPct.toFixed(2)}% )`, totalPL>=0?'var(--green)':'var(--rose)')}
       ${card('配当利回り（取得）', yieldCost.toFixed(2)+'%', `時価 ${yieldNow.toFixed(2)}%`)}
       ${card('年間配当金（税引後）', yenComma(divAfterTax)+'円', `税引前 ${yenComma(totalDiv)}円`, 'var(--teal-deep)')}
-      ${card('銘柄数', rows.length+'')}
+      ${card('銘柄数', rows.length+'', (getDataMeta().portfolio? '株価は '+getDataMeta().portfolio+' 時点' : ''))}
     </div>
     <div style="margin-bottom:14px;">
       <div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">配当金支払額（月別・${dispLabel}）</div>
@@ -4028,7 +4073,7 @@ const INPUT_IDS = [
   'kokuhoMedicalRate','kokuhoSupportRate','kokuhoKaigoRate','kokuhoEqual','kokuhoKaigoEqual','kokuhoFlat',
   'kaigoInsMonthly','koukiRate','koukiFlat',
   'pensionMonthly','nenkinExempt','spouseDeduction',
-  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly','coastRate','hdDivDisplay','hdSectorBasis',
+  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly','coastRate','hdDivDisplay','hdSectorBasis','pensionMode','dataMetaJson',
   'pensionStartAge','taishokin','idecoCurrent','idecoMonthly',
   'targetFailRate','trials','bucket1Years','bucket2Years','bucket2Rate',
   'emergencyFund','cashYearsTarget','cashReturn'
@@ -4296,7 +4341,7 @@ function renderCoastFire(params, fireYear) {
   const pMul = pensionMultiplier(pensionAge);
   const kokuminReceive = nenkinReceiveRate(params.taxParams ? params.taxParams.nenkinExempt : 'none');
   const pensionAnnual = calcKouseiPensionAnnual(params.kouseiYearsCurrent + fy, params.kouseiAvgMonthly) * pMul
-                      + 816000 * kokuminReceive * pMul + 816000 * pMul;
+                      + 816000 * kokuminReceive * pMul + (params.pensionSolo ? 0 : 816000 * pMul);
 
   // FIRE後の年間生活費（住宅ローン・教育費除く）
   const livingAnnual = params.monthlyLifeExHouse * 12 + params.annualSpecial;
@@ -4344,7 +4389,7 @@ function renderCoastFire(params, fireYear) {
   host.innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:10px;">
       ${stat('🎯 積立卒業ライン', man(target) + '万', `(生活費${man(livingAnnual)}万−年金${man(pensionAnnual)}万)÷${(rate*100).toFixed(1)}%`, 'var(--teal-deep)')}
-      ${stat('💰 年金見込み（世帯・年）', man(pensionAnnual) + '万', `${pensionAge}歳受給開始・今の物価`)}
+      ${stat('💰 年金見込み（年）', man(pensionAnnual) + '万', `${pensionAge}歳開始・${params.pensionSolo?'夫のみ（保守）':'夫婦満額'}・今の物価`)}
       ${stat('📈 今すぐ積立をやめた場合', man(coastVal(0)) + '万', `${pensionAge}歳時点・実質${(rReal*100).toFixed(1)}%/年`, coastVal(0) >= target ? 'var(--green)' : 'var(--ink)')}
     </div>
     ${verdict}`;
@@ -5104,6 +5149,7 @@ function readParams() {
     fireMode:         inputs.fireMode.value,
     fireTargetAge:    +inputs.fireTargetAge.value,
     pensionStartAge: +inputs.pensionStartAge.value,
+    pensionSolo: (inputs.pensionMode ? inputs.pensionMode.value : 'solo') !== 'couple',
     taishokin:    +inputs.taishokin.value * 10000,
     idecoCurrent: +inputs.idecoCurrent.value * 10000,
     idecoMonthly: +inputs.idecoMonthly.value * 10000,
@@ -5322,7 +5368,7 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
     if (ageH >= pensionStartAge) {
       const baseKousei  = kouseiPensionAnnual * pMul;
       const baseKokumin = 816000 * kokuminReceive * pMul; // 本人分
-      const wifeKokumin = 816000 * 1.0 * pMul;           // 妻は免除なし前提（別途設定可）
+      const wifeKokumin = params.pensionSolo ? 0 : 816000 * 1.0 * pMul;  // 保守前提では妻分を含めない
       pensionIncome = (baseKousei + baseKokumin + wifeKokumin) * Math.pow(1 + params.inflation * 0.5, y);
     }
 
@@ -6388,6 +6434,12 @@ async function runSimulation() {
   const fireAge    = params.startAgeOriginal + fireYear;
   const projAssets = fireParams.startAssets; // FIRE時の予測総資産（退職金込み）
   const baseResult = runMonteCarlo(fireParams, 0, trials);
+  // 年金のもう一方の前提（夫のみ⇄夫婦満額）での参考破綻確率
+  const refPension = runMonteCarlo({ ...fireParams, pensionSolo: !fireParams.pensionSolo }, 0, Math.min(trials, 500));
+  window._refPensionNote = {
+    mainSolo: fireParams.pensionSolo,
+    refRate: refPension.failRate * 100
+  };
   const scenarioNames = { '1':'① 早期FIRE', '2':'② 標準FIRE', '3':'③ 余裕FIRE' };
   const scenarioLabel = params.fireMode === 'target'
     ? `${fireAge}歳（目標年齢）`
@@ -6579,6 +6631,15 @@ function displayResults(baseResult, stressResults, safeAssets, safeYears, params
   if (rate <= 1) { banner.classList.add('safe'); verdict.textContent = '✓ かなり安全(破綻確率1%以下)'; }
   else if (rate <= 5) { banner.classList.add('warning'); verdict.textContent = '⚠ 注意水準(20〜100回に1回は破綻)'; }
   else { banner.classList.add('danger'); verdict.textContent = '⚠ 危険水準(計画見直しが必要)'; }
+  // 年金2パターン表示（メイン＝設定した前提／参考＝もう一方）
+  const rp = window._refPensionNote;
+  if (rp) {
+    verdict.innerHTML += `<div style="font-size:12px;margin-top:5px;color:var(--ink-soft);">` +
+      (rp.mainSolo
+        ? `年金前提：<b>夫のみ（保守）</b> ${rate.toFixed(1)}%　／　参考：夫婦満額で長生きなら <b>${rp.refRate.toFixed(1)}%</b>`
+        : `年金前提：<b>夫婦満額</b> ${rate.toFixed(1)}%　／　参考：夫のみ（保守）なら <b>${rp.refRate.toFixed(1)}%</b>`) +
+      `</div>`;
+  }
 
   document.getElementById('recommendBox').style.display = 'block';
   const targetFR = +inputs.targetFailRate.value;
