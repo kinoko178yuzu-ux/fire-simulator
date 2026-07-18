@@ -3602,11 +3602,16 @@ function setAccountHistory(h){ document.getElementById('accountHistoryJson').val
 
 async function mfAssetFetch(){
   const st=document.getElementById('mfAssetStatus');
-  const ready=await new Promise(res=>{ const f=()=>res(true);
-    document.addEventListener('mf-asset-ready',f,{once:true});
+  // ブリッジ検出（document-idle注入の遅れに余裕を持たせ2回試行）
+  const ping=()=>new Promise(res=>{ const f=()=>{document.removeEventListener('mf-asset-ready',f);res(true);};
+    document.addEventListener('mf-asset-ready',f);
     document.dispatchEvent(new CustomEvent('mf-asset-ping'));
-    setTimeout(()=>res(false),600); });
-  if(!ready){ if(st) st.innerHTML=`<span style="color:var(--rose);">❌ Tampermonkeyスクリプト未インストール。<a href="${location.origin}/mf_asset_bridge.user.js" target="_blank" style="color:var(--teal-deep);">こちらからインストール</a>して再実行してください。</span>`; return; }
+    setTimeout(()=>{document.removeEventListener('mf-asset-ready',f);res(false);},1000); });
+  let ready=await ping(); if(!ready) ready=await ping();
+  if(!ready){ if(st) st.innerHTML=`<span style="color:var(--rose);">❌ 連携スクリプトが見つかりません。<br>`+
+    `① <a href="${location.origin}/mf_asset_bridge.user.js" target="_blank" style="color:var(--teal-deep);font-weight:700;">こちらからインストール</a>（Tampermonkeyの画面で「インストール」を押す）<br>`+
+    `② <b>このページを再読み込み（Cmd+R）</b>してから、もう一度ボタンを押す<br>`+
+    `<span style="color:var(--ink-mute);font-size:11.5px;">※インストール済みでも、この画面を開いた後に入れた場合は必ず再読み込みが必要です。Tampermonkey拡張がONで、この資産ブリッジが「有効」になっているかもご確認ください。</span></span>`; return; }
   if(st) st.innerHTML='<span style="color:var(--teal-deep);">⏳ マネフォのタブを開いています…（ログイン中なら、ログイン後に自動で読み取ります）</span>';
   document.dispatchEvent(new CustomEvent('mf-asset-request'));
 }
