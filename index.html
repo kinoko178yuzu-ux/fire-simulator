@@ -1193,7 +1193,8 @@ select:focus { border-color: var(--teal); }
       <button class="btn btn-cloud" id="cloudSyncBtn" title="合言葉を設定すると、スマホなど他の端末と全データを自動同期します">☁️ 同期 <span id="syncStatusDot" class="sync-dot off"></span></button>
       <button class="btn btn-primary" id="downloadBtn" title="全データをJSONファイルとしてPCに書き出します（バックアップ用）">💾 バックアップ保存</button>
       <button class="btn" id="uploadBtn" title="書き出したバックアップJSONを読み込んで、データを復元します">📂 バックアップ復元</button>
-      <button class="btn btn-danger" id="resetBtn" title="すべての入力・取込データを初期値に戻します">初期化</button>
+      <button class="btn" id="autoBkBtn" onclick="restoreAutoBackup()" title="毎日自動保存されるバックアップ（直近5日分）から復元します。「初期化」しても消えません">⟲ 自動BK</button>
+      <button class="btn btn-danger" id="resetBtn" title="すべての入力・取込データを初期値に戻します（自動BKからは復元可能）">初期化</button>
     </div>
     <input type="file" id="fileInput" accept=".json,application/json" style="display:none;">
   </header>
@@ -3598,7 +3599,7 @@ async function brokerFetch(broker) {
  * accountHistoryJson = { "YYYY-MM": {date,total,cash,stockPL,fundPL,exPL,accounts:{口座名:円}} }
  * ========================================================== */
 function getAccountHistory(){ try{ const o=JSON.parse(document.getElementById('accountHistoryJson').value||'{}'); return (o&&typeof o==='object')?o:{}; }catch{ return {}; } }
-function setAccountHistory(h){ document.getElementById('accountHistoryJson').value=JSON.stringify(h); if(typeof debouncedSave==='function'&&!isApplyingCloud) debouncedSave(); }
+function setAccountHistory(h){ document.getElementById('accountHistoryJson').value=JSON.stringify(h); if(typeof debouncedSave==='function'&&!isApplyingCloud) debouncedSave(); if(typeof renderAssetTimeline==='function') renderAssetTimeline(); }
 
 async function mfAssetFetch(){
   const st=document.getElementById('mfAssetStatus');
@@ -3633,6 +3634,8 @@ function mfAssetApply(d){
   const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
   const h=getAccountHistory();
   h[ym]={ date:`${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()}`, total, cash:cashTotal,
+          stockV: stocks.reduce((s,r)=>s+(+r.evalv||0),0),
+          fundV:  funds.reduce((s,r)=>s+(+r.evalv||0),0),
           stockPL, fundPL, exPL: total-stockPL-fundPL, accounts:byBank };
   setAccountHistory(h);
   let pf={upd:0,add:0,miss:[]};
@@ -3688,10 +3691,37 @@ function renderAssetTimeline(){
     <tr><td class="bg-rowlabel" style="text-align:left;">前月比</td>${show.map((m,i)=>{ const d=i>0? h[m].total-h[show[i-1]].total : null;
       return `<td style="text-align:right;color:${d==null?'var(--ink-mute)':d<0?'var(--rose)':'var(--green)'};">${d==null?'–':(d>=0?'+':'')+man(d)}</td>`; }).join('')}</tr>
     </tbody></table></div>
-    <div style="position:relative;height:240px;"><canvas id="assetTimelineChartCv"></canvas></div>
+    ${(()=>{ // 今月分が未記録ならリマインダー
+      const now=new Date(); const cur=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+      return yms[yms.length-1] < cur ? `<div style="background:#fdf6e9;border:1px solid #d97706;border-radius:6px;padding:7px 12px;margin-bottom:8px;font-size:12.5px;">⏰ <b>今月（${+cur.slice(5)}月）分がまだ記録されていません。</b>上の「📥 マネフォから資産を取得」を押してください。</div>` : ''; })()}
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;">
+      <div style="flex:1 1 320px;position:relative;height:240px;min-width:0;"><canvas id="assetTimelineChartCv"></canvas></div>
+      <div style="flex:0 1 260px;min-width:220px;">
+        <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:2px;text-align:center;">資産配分（${latest.date||'最新'}）</div>
+        <div style="position:relative;height:220px;"><canvas id="assetAllocPieCv"></canvas></div>
+      </div>
+    </div>
     <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">単位：万円。同じ月に再取得すると上書き（月末近くに取得すると月末値の近似になります）。損益除外＝総資産−株式評価損益−投信評価損益。</div>`;
   if(typeof Chart==='undefined') return;
   if(assetTimelineChart){ try{assetTimelineChart.destroy();}catch{} assetTimelineChart=null; }
+  if(window.assetAllocPie){ try{window.assetAllocPie.destroy();}catch{} window.assetAllocPie=null; }
+  // 資産配分ドーナツ（現金／株式／投信）
+  const pieCv=document.getElementById('assetAllocPieCv');
+  if(pieCv){
+    const sv=+latest.stockV||0, fv=+latest.fundV||0;
+    const cashV=Math.max((+latest.cash||0),0);
+    const other=Math.max((+latest.total||0)-cashV-sv-fv,0);
+    if(sv||fv){
+      const items=[['現金',cashV,'#4a90d9'],['株式',sv,'#b8413d'],['投資信託',fv,'#e8a33d']];
+      if(other>10000) items.push(['その他',other,'#8a8e98']);
+      window.assetAllocPie=new Chart(pieCv.getContext('2d'),{type:'doughnut',
+        data:{labels:items.map(x=>x[0]),datasets:[{data:items.map(x=>Math.round(x[1]/10000)),backgroundColor:items.map(x=>x[2]),borderColor:'#fff',borderWidth:1.5}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:12}},
+          tooltip:{callbacks:{label:c=>{const t=c.dataset.data.reduce((s,v)=>s+v,0);return `${c.label}: ${c.parsed.toLocaleString()}万 (${(c.parsed/t*100).toFixed(1)}%)`;}}}}}});
+    } else {
+      pieCv.parentElement.innerHTML='<div style="font-size:11.5px;color:var(--ink-mute);padding:20px 8px;text-align:center;">円グラフは次回の取得から表示されます（もう一度「📥 取得」を押すと今月分に配分が記録されます）</div>';
+    }
+  }
   const cv=document.getElementById('assetTimelineChartCv'); if(!cv) return;
   assetTimelineChart=new Chart(cv.getContext('2d'),{type:'bar',
     data:{labels:show.map(m=>`${m.slice(0,4)}/${+m.slice(5)}`),datasets:[
@@ -4697,6 +4727,32 @@ function saveDataSilent() {
   INPUT_IDS.forEach(id => { data[id] = inputs[id].value; });
   data._loanPayoffToggle = document.querySelector('.toggle-option.active')?.dataset.loanPayoff || 'yes';
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); showSaveIndicator(); } catch(e) {}
+  autoBackupTick();
+}
+
+/** ★NEW 日次自動バックアップ（別キー保存＝「初期化」ボタンでは消えない。直近5日分保持） */
+function autoBackupTick() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY); if (!raw) return;
+    const today = new Date().toISOString().slice(0, 10);
+    let list = JSON.parse(localStorage.getItem('sfs_autobk') || '[]');
+    if (list.length && list[list.length - 1].date === today) list[list.length - 1].data = raw;
+    else list.push({ date: today, data: raw });
+    while (list.length > 5) list.shift();
+    localStorage.setItem('sfs_autobk', JSON.stringify(list));
+  } catch {}
+}
+function restoreAutoBackup() {
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem('sfs_autobk') || '[]'); } catch {}
+  if (!list.length) { alert('自動バックアップはまだありません（操作すると毎日自動で保存されます）'); return; }
+  const opts = list.map((x, i) => `${i + 1}: ${x.date}`).join('\n');
+  const n = prompt(`復元する自動バックアップの番号を入力してください:\n${opts}`, String(list.length));
+  if (n == null) return;
+  const it = list[+n - 1]; if (!it) { alert('番号が正しくありません'); return; }
+  if (!confirm(`${it.date} 時点のデータに置き換えます。現在のデータは失われます。よろしいですか？`)) return;
+  localStorage.setItem(STORAGE_KEY, it.data);
+  location.reload();
 }
 
 function showSaveIndicator() {
