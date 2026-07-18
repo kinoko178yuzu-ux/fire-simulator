@@ -1889,6 +1889,19 @@ select:focus { border-color: var(--teal); }
         <div class="result-sub" id="fireAge">—</div>
       </div>
 
+      <!-- ★NEW 資産推移（月次記録・マネフォ連携）— 毎月の記帳をここで -->
+      <div class="card mode-plan" id="assetTimelineCard">
+        <h3><span class="dot"></span>📈 資産推移（月次記録・マネフォ連携）</h3>
+        <div style="font-size:13px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
+          ボタンを押すとマネフォの資産内訳ページが開き、<strong>全口座の残高・株式・投信を自動で読み取って月次記録</strong>します（同じ月に再取得すると上書き）。手動集計シートの置き換えです。株式データはポートフォリオにも自動反映されるので、<strong>マネフォ貼付も不要になります</strong>。
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+          <button type="button" id="btnMfAssetFetch" onclick="mfAssetFetch()" style="font-size:13px;padding:6px 16px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📥 マネフォから資産を取得</button>
+          <span id="mfAssetStatus" style="font-size:12.5px;min-height:18px;"></span>
+        </div>
+        <div id="assetTimelinePanel"><div style="font-size:12.5px;color:var(--ink-mute);">まだ記録がありません。上のボタンで初回取得すると、口座×月の推移表とグラフが表示されます。</div></div>
+      </div>
+
       <!-- ★NEW ライフプラン年表（直接編集・プランのメイン） -->
       <div class="card mode-plan" id="lifePlanCard">
         <h3><span class="dot"></span>📅 ライフプラン年表（直接書き込みで設計）</h3>
@@ -2263,18 +2276,6 @@ select:focus { border-color: var(--teal); }
       </div>
 
       <!-- ★NEW 月次資産推移（マネフォ連携・手動集計シートの置き換え） -->
-      <div class="card mode-plan" id="assetTimelineCard">
-        <h3><span class="dot"></span>📈 資産推移（月次記録・マネフォ連携）</h3>
-        <div style="font-size:13px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
-          ボタンを押すとマネフォの資産内訳ページが開き、<strong>全口座の残高・株式・投信を自動で読み取って月次記録</strong>します（同じ月に再取得すると上書き）。手動集計シートの置き換えです。株式データはポートフォリオにも自動反映されるので、<strong>マネフォ貼付も不要になります</strong>。
-        </div>
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
-          <button type="button" id="btnMfAssetFetch" onclick="mfAssetFetch()" style="font-size:13px;padding:6px 16px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📥 マネフォから資産を取得</button>
-          <span id="mfAssetStatus" style="font-size:12.5px;min-height:18px;"></span>
-        </div>
-        <div id="assetTimelinePanel"><div style="font-size:12.5px;color:var(--ink-mute);">まだ記録がありません。上のボタンで初回取得すると、口座×月の推移表とグラフが表示されます。</div></div>
-      </div>
-
       <div class="card mode-plan">
         <h3><span class="dot"></span>総資産推移(現在〜寿命まで・決定論的予測)</h3>
         <div class="chart-container"><canvas id="totalAssetChart"></canvas></div>
