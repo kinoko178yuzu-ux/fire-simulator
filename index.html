@@ -2056,6 +2056,7 @@ select:focus { border-color: var(--teal); }
         <input type="hidden" id="dividendListJson" value="[]">
         <input type="hidden" id="divActualJson" value='{"txns":[]}'>
         <input type="hidden" id="dataMetaJson" value="{}">
+        <input type="hidden" id="accountHistoryJson" value="{}">
         <div id="divCompare"></div>
         <details style="margin-top:10px;" id="divPerStockDetails">
           <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">▶ 銘柄別 予定 vs 実績</summary>
@@ -2259,6 +2260,19 @@ select:focus { border-color: var(--teal); }
           <div style="font-size:14px;font-weight:700;color:var(--ink-soft);margin-bottom:8px;">💧 現金確保年数による資産推移への影響</div>
           <div id="cashSensitivityInfo" style="font-size:13px;color:var(--ink-mute);">「破綻確率シミュレーション実行」を押すと表示</div>
         </div>
+      </div>
+
+      <!-- ★NEW 月次資産推移（マネフォ連携・手動集計シートの置き換え） -->
+      <div class="card mode-plan" id="assetTimelineCard">
+        <h3><span class="dot"></span>📈 資産推移（月次記録・マネフォ連携）</h3>
+        <div style="font-size:13px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
+          ボタンを押すとマネフォの資産内訳ページが開き、<strong>全口座の残高・株式・投信を自動で読み取って月次記録</strong>します（同じ月に再取得すると上書き）。手動集計シートの置き換えです。株式データはポートフォリオにも自動反映されるので、<strong>マネフォ貼付も不要になります</strong>。
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+          <button type="button" id="btnMfAssetFetch" onclick="mfAssetFetch()" style="font-size:13px;padding:6px 16px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📥 マネフォから資産を取得</button>
+          <span id="mfAssetStatus" style="font-size:12.5px;min-height:18px;"></span>
+        </div>
+        <div id="assetTimelinePanel"><div style="font-size:12.5px;color:var(--ink-mute);">まだ記録がありません。上のボタンで初回取得すると、口座×月の推移表とグラフが表示されます。</div></div>
       </div>
 
       <div class="card mode-plan">
@@ -3578,6 +3592,113 @@ async function brokerFetch(broker) {
   document.dispatchEvent(new CustomEvent('broker-fetch-request', { detail: { broker, ...dateRange } }));
 }
 
+/* ============================================================
+ * ★NEW マネフォ資産取得（口座残高＋株式＋投信 → 月次記録＆ポートフォリオ更新）
+ * accountHistoryJson = { "YYYY-MM": {date,total,cash,stockPL,fundPL,exPL,accounts:{口座名:円}} }
+ * ========================================================== */
+function getAccountHistory(){ try{ const o=JSON.parse(document.getElementById('accountHistoryJson').value||'{}'); return (o&&typeof o==='object')?o:{}; }catch{ return {}; } }
+function setAccountHistory(h){ document.getElementById('accountHistoryJson').value=JSON.stringify(h); if(typeof debouncedSave==='function'&&!isApplyingCloud) debouncedSave(); }
+
+async function mfAssetFetch(){
+  const st=document.getElementById('mfAssetStatus');
+  const ready=await new Promise(res=>{ const f=()=>res(true);
+    document.addEventListener('mf-asset-ready',f,{once:true});
+    document.dispatchEvent(new CustomEvent('mf-asset-ping'));
+    setTimeout(()=>res(false),600); });
+  if(!ready){ if(st) st.innerHTML=`<span style="color:var(--rose);">❌ Tampermonkeyスクリプト未インストール。<a href="${location.origin}/mf_asset_bridge.user.js" target="_blank" style="color:var(--teal-deep);">こちらからインストール</a>して再実行してください。</span>`; return; }
+  if(st) st.innerHTML='<span style="color:var(--teal-deep);">⏳ マネフォのタブを開いています…（ログイン中なら、ログイン後に自動で読み取ります）</span>';
+  document.dispatchEvent(new CustomEvent('mf-asset-request'));
+}
+document.addEventListener('mf-asset-result',(e)=>mfAssetApply(e.detail));
+
+function mfAssetApply(d){
+  const st=document.getElementById('mfAssetStatus');
+  if(!d || d.error){ if(st) st.innerHTML=`<span style="color:var(--rose);">❌ ${d?d.error:'取得に失敗しました'}</span>`; return; }
+  const stocks=d.stocks||[], funds=d.funds||[], cash=d.cash||[];
+  const byBank={};
+  cash.forEach(r=>{ if(r.bank) byBank[r.bank]=(byBank[r.bank]||0)+(+r.yen||0); });
+  stocks.forEach(r=>{ if(r.bank) byBank[r.bank]=(byBank[r.bank]||0)+(+r.evalv||0); });
+  funds.forEach(r=>{ if(r.bank) byBank[r.bank]=(byBank[r.bank]||0)+(+r.evalv||0); });
+  const stockPL=stocks.reduce((s,r)=>s+(+r.pl||0),0);
+  const fundPL =funds.reduce((s,r)=>s+(+r.pl||0),0);
+  const cashTotal=cash.reduce((s,r)=>s+(+r.yen||0),0);
+  const total=(+d.total)||Object.values(byBank).reduce((s,v)=>s+v,0);
+  const now=new Date();
+  const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  const h=getAccountHistory();
+  h[ym]={ date:`${now.getFullYear()}/${now.getMonth()+1}/${now.getDate()}`, total, cash:cashTotal,
+          stockPL, fundPL, exPL: total-stockPL-fundPL, accounts:byBank };
+  setAccountHistory(h);
+  let pf={upd:0,add:0,miss:[]};
+  if(stocks.length) pf=refreshFromStructured(stocks);   // マネフォ貼付と同等の更新
+  if(typeof stampDataMeta==='function') stampDataMeta('mfAsset');
+  renderAssetTimeline();
+  if(typeof renderHighDiv==='function') renderHighDiv();
+  if(typeof renderDivCompare==='function') renderDivCompare();
+  if(typeof calculate==='function') calculate();
+  if(st) st.innerHTML=`<span style="color:var(--green);font-weight:700;">✅ ${ym.replace('-','/')}分を記録（総資産 ${(total/10000).toFixed(0)}万円・現金${cash.length}件・株式${stocks.length}件・投信${funds.length}件）</span>`+
+    ((pf.add||pf.upd)?`<span style="color:var(--ink-mute);font-size:11.5px;">　株式ポートフォリオも更新（更新${pf.upd}・新規${pf.add}${pf.miss.length?`・要設定${pf.miss.length}`:''}）</span>`:'');
+}
+
+/** マネフォ資産の株式テーブルからポートフォリオを更新（貼付と同等・複数口座は合算） */
+function refreshFromStructured(list){
+  const agg={};
+  list.forEach(r=>{ const code=(r.code||'').toUpperCase(); if(!HD_CODE_RE.test(code)||!(+r.shares)) return;
+    if(!agg[code]) agg[code]={name:r.name||'',shares:0,evalSum:0,purSum:0};
+    agg[code].shares+=+r.shares; agg[code].evalSum+=(+r.evalv||0); agg[code].purSum+=((+r.evalv||0)-(+r.pl||0)); });
+  const p=getPortfolio(); let upd=0,add=0; const miss=[];
+  Object.keys(agg).forEach(code=>{ const a=agg[code]; const sh=a.shares;
+    const price=sh?Math.round(a.evalSum/sh):0, cost=sh?Math.round(a.purSum/sh):0;
+    if(p[code]){ p[code].shares=sh; p[code].price=price; p[code].cost=cost; if(a.name) p[code].name=a.name; upd++; }
+    else { const m=(typeof HD_MASTER!=='undefined')?HD_MASTER[code]:null;
+      p[code]={name:a.name,sector:m?m.s:'未設定',cyc:m?(HD_SECTOR_CYC[m.s]||''):'',shares:sh,cost,price,dps:m?+m.d:0,months:HD_PAY_MONTHS[code]||[]};
+      add++; if(!m) miss.push(code); } });
+  setPortfolio(p);
+  if(typeof stampDataMeta==='function') stampDataMeta('portfolio');
+  return {upd,add,miss};
+}
+
+let assetTimelineChart=null;
+function renderAssetTimeline(){
+  const host=document.getElementById('assetTimelinePanel'); if(!host) return;
+  const raw=(document.getElementById('accountHistoryJson')||{}).value||'{}';
+  if(host.dataset.last===raw) return;   // データ不変なら再描画しない
+  host.dataset.last=raw;
+  const h=getAccountHistory(); const yms=Object.keys(h).filter(k=>/^\d{4}-\d{2}$/.test(k)).sort();
+  if(!yms.length){ host.innerHTML='<div style="font-size:12.5px;color:var(--ink-mute);">まだ記録がありません。上のボタンで初回取得すると、口座×月の推移表とグラフが表示されます。</div>'; return; }
+  const show=yms.slice(-13);
+  const latest=h[show[show.length-1]];
+  const acctSet=new Set(); show.forEach(m=>Object.keys(h[m].accounts||{}).forEach(a=>acctSet.add(a)));
+  const accts=[...acctSet].sort((a,b)=>((latest.accounts||{})[b]||0)-((latest.accounts||{})[a]||0));
+  const man=v=>v==null?'–':Math.round(v/10000).toLocaleString();
+  const rowH=(label,get)=>`<tr><td class="bg-rowlabel" style="text-align:left;white-space:nowrap;">${label}</td>${show.map(m=>`<td style="text-align:right;">${get(h[m])}</td>`).join('')}</tr>`;
+  host.innerHTML=`<div style="overflow-x:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;">
+    <table class="bg-table" style="min-width:${Math.max(560,140+show.length*78)}px;">
+    <thead><tr><th class="bg-rowlabel">口座＼月（万円）</th>${show.map(m=>`<th title="取得日 ${h[m].date}">${m.slice(0,4)}/${+m.slice(5)}</th>`).join('')}</tr></thead><tbody>
+    ${accts.map(a=>rowH(esc(a),x=>man((x.accounts||{})[a]))).join('')}
+    ${rowH('<b>現金合計</b>',x=>`<b>${man(x.cash)}</b>`)}
+    ${rowH('<b>総資産</b>',x=>`<b style="color:var(--teal-deep);">${man(x.total)}</b>`)}
+    ${rowH('<b>総資産（損益除外）</b>',x=>`<b style="color:#d97706;">${man(x.exPL)}</b>`)}
+    <tr><td class="bg-rowlabel" style="text-align:left;">前月比</td>${show.map((m,i)=>{ const d=i>0? h[m].total-h[show[i-1]].total : null;
+      return `<td style="text-align:right;color:${d==null?'var(--ink-mute)':d<0?'var(--rose)':'var(--green)'};">${d==null?'–':(d>=0?'+':'')+man(d)}</td>`; }).join('')}</tr>
+    </tbody></table></div>
+    <div style="position:relative;height:240px;"><canvas id="assetTimelineChartCv"></canvas></div>
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">単位：万円。同じ月に再取得すると上書き（月末近くに取得すると月末値の近似になります）。損益除外＝総資産−株式評価損益−投信評価損益。</div>`;
+  if(typeof Chart==='undefined') return;
+  if(assetTimelineChart){ try{assetTimelineChart.destroy();}catch{} assetTimelineChart=null; }
+  const cv=document.getElementById('assetTimelineChartCv'); if(!cv) return;
+  assetTimelineChart=new Chart(cv.getContext('2d'),{type:'bar',
+    data:{labels:show.map(m=>`${m.slice(0,4)}/${+m.slice(5)}`),datasets:[
+      {label:'現金',data:show.map(m=>Math.round(h[m].cash/10000)),backgroundColor:'#4a90d9'},
+      {label:'総資産',data:show.map(m=>Math.round(h[m].total/10000)),backgroundColor:'#b8413d'},
+      {label:'総資産（損益除外）',data:show.map(m=>Math.round(h[m].exPL/10000)),backgroundColor:'#e8a33d'}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'top',labels:{font:{size:11}}},
+        tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toLocaleString()}万円`}}},
+      scales:{y:{ticks:{callback:v=>v.toLocaleString()+'万'}}}}});
+}
+document.addEventListener('DOMContentLoaded', renderAssetTimeline);
+
 function importBrokerCSV(text, label){
   const list=parseBrokerDividendCSV(text); if(!list.length) return 0;
   const lab=(label||'').trim();
@@ -4073,7 +4194,7 @@ const INPUT_IDS = [
   'kokuhoMedicalRate','kokuhoSupportRate','kokuhoKaigoRate','kokuhoEqual','kokuhoKaigoEqual','kokuhoFlat',
   'kaigoInsMonthly','koukiRate','koukiFlat',
   'pensionMonthly','nenkinExempt','spouseDeduction',
-  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly','coastRate','hdDivDisplay','hdSectorBasis','pensionMode','dataMetaJson',
+  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly','coastRate','hdDivDisplay','hdSectorBasis','pensionMode','dataMetaJson','accountHistoryJson',
   'pensionStartAge','taishokin','idecoCurrent','idecoMonthly',
   'targetFailRate','trials','bucket1Years','bucket2Years','bucket2Rate',
   'emergencyFund','cashYearsTarget','cashReturn'
@@ -4463,7 +4584,7 @@ const CARD_STATE_KEY = 'sfs_cardState';
 /* 初期状態: 1=開く（毎日見るもの）/ 0=閉じる（設定・詳細分析）。キーはid または タイトル部分一致 */
 const CARD_DEFAULTS = {
   lifePlanCard:1, bucketCard:1, budgetCard:1, highDivCard:1, dividendCard:1,
-  coastCard:1, threeScenarioCard:1,
+  coastCard:1, threeScenarioCard:1, assetTimelineCard:1,
   '総資産推移':1, '資産推移シミュレーション':1,
   recurringCard:0, 'FIRE後の月額固定費':0, '年齢別 年間収支':0, 'ストレステスト':0,
   '退職年齢別':0, 'FIRE直後の税金':0, '退職直後の医療保険':0, 'FIRE時の資産配分':0,
@@ -6015,6 +6136,8 @@ function calculate() {
   if (typeof renderRecurring === 'function') renderRecurring();
   if (typeof renderBucketList === 'function') renderBucketList();
   if (typeof renderCoastFire === 'function') renderCoastFire(params, fireYear);
+  if (typeof renderAssetTimeline === 'function') renderAssetTimeline();
+  if (typeof renderFreshness === 'function') renderFreshness();
 }
 
 /** ============================
