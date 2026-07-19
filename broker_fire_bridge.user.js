@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      1.3
+// @version      1.4
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @match        https://site.sbisec.co.jp/*
+// @match        https://site2.sbisec.co.jp/*
 // @match        https://member.rakuten-sec.co.jp/*
 // @match        http://localhost:7799/*
 // @match        https://kinoko178yuzu-ux.github.io/fire-simulator/*
@@ -153,8 +154,18 @@
       return;
     }
 
-    // 配当ページ以外なら移動
+    // 配当ページ以外なら移動（site2ログイン後もここで配当ページへ誘導）。
+    // 無限ループ防止：このリクエストでの遷移回数を上限4回に制限。
     if (!location.href.includes('/account/assets/dividends')) {
+      const navKey = 'fireSbiNav_' + req.ts;
+      let navCount = 0; try { navCount = +sessionStorage.getItem(navKey) || 0; } catch {}
+      if (navCount >= 4) {
+        GM_setValue('sbiRes', { error: '配当ページに到達できませんでした。SBIにログイン後、口座管理→配当金の画面を開いた状態でもう一度お試しください。', ts: Date.now() });
+        banner.style.background = '#b8413d';
+        banner.textContent = '❌ 配当ページに自動で到達できませんでした（手動で配当画面を開いてください）';
+        return;
+      }
+      try { sessionStorage.setItem(navKey, String(navCount + 1)); } catch {}
       banner.textContent = 'FIREシミュレーター連携: 配当ページへ移動中…';
       location.href = TARGET;
       return;

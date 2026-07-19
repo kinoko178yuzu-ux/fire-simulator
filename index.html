@@ -506,6 +506,9 @@ body.mode-div .layout { grid-template-columns:1fr; }
 .bg-group2 td { color: var(--ink-mute); }
 .bg-subtotal td { font-weight: 700; background: #f3eee4; }
 .bg-balance td { font-weight: 700; background: #eef5f0; }
+/* ★NEW 読み取り専用データ表のゼブラ縞（見やすさ向上） */
+.bg-table.zebra tbody tr:nth-child(even) td { background: rgba(13,110,110,0.045); }
+.bg-table.zebra tbody tr:hover td { background: rgba(13,110,110,0.11); }
 .bg-imp { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0; line-height: 1; }
 .bg-imp:hover { transform: scale(1.2); }
 /* どの行を編集中か追いやすく（データ行のみ。合計行は対象外） */
@@ -2000,14 +2003,8 @@ select:focus { border-color: var(--teal); }
         <!-- STEP2: 配当実績 -->
         <div style="margin-bottom:10px;padding:10px 14px;background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;">
           <div style="font-size:14px;font-weight:700;color:var(--ink-soft);margin-bottom:2px;">💰 STEP2：配当の実績を取り込む（証券会社CSV）<span id="brokerFreshness" style="font-weight:400;color:var(--ink-mute);font-size:11.5px;margin-left:10px;"></span></div>
-          <div style="font-size:12px;color:var(--ink-mute);margin-bottom:8px;">ボタンを押すと証券会社のサイトが開き、ログイン後に配当CSVを自動で取得してアプリに反映します（SBIは全自動／楽天は配当ページを開くだけ）。</div>
+          <div style="font-size:12px;color:var(--ink-mute);margin-bottom:8px;">ボタンを押すと証券会社のサイトが開き、ログイン後に配当CSVを自動で取得してアプリに反映します（SBIは全自動／楽天は配当ページを開くだけ）。取り込むと<b>収支シートの配当行にも自動反映</b>されます。楽天はボタンを押すと「私／妻」を選びます。</div>
           <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:10px;">
-            <label style="font-size:12.5px;color:var(--ink-soft);font-weight:700;">口座（名義）<span style="font-weight:400;color:var(--ink-mute);">※楽天の自動取得用（SBIは私固定）</span>&ensp;
-              <select id="divBrokerLabel" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">
-                <option value="">— 選択 —</option>
-                <option value="私">私</option>
-                <option value="妻">妻</option>
-              </select></label>
             <label style="font-size:12.5px;color:var(--ink-soft);">取得期間&ensp;
               <select id="sbiDateRange" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">
                 <option value="thisyear">今年</option>
@@ -2017,18 +2014,18 @@ select:focus { border-color: var(--teal); }
               </select></label>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <button id="btnSbiFetch" onclick="brokerFetch('sbi')" style="font-size:12.5px;padding:5px 14px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;">📥 SBI 自動取得</button>
-            <button id="btnRakutenFetch" onclick="brokerFetch('rakuten')" style="font-size:12.5px;padding:5px 14px;background:#c0392b;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;">📥 楽天 自動取得</button>
+            <button id="btnSbiFetch" onclick="brokerFetch('sbi')" style="font-size:12.5px;padding:5px 14px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;">📥 SBI 自動取得（私）</button>
+            <button id="btnRakutenFetch" onclick="brokerFetch('rakuten')" style="font-size:12.5px;padding:5px 14px;background:#c0392b;color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;">📥 楽天 自動取得（私／妻を選択）</button>
             <span style="font-size:11.5px;color:var(--ink-mute);">または</span>
             <label style="font-size:12.5px;color:var(--ink-soft);cursor:pointer;padding:5px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);">📁 ファイル選択<input type="file" id="divBrokerCsv" accept=".csv,text/csv" multiple style="display:none;"></label>
             <span style="font-size:11.5px;color:var(--ink-mute);">（取込時にファイルごと名義を選びます。両方まとめて選択OK）</span>
           </div>
           <div id="divBrokerApiStatus" style="font-size:12.5px;margin-top:7px;min-height:18px;"></div>
           <div id="divBrokerResult" style="font-size:12.5px;margin-top:4px;"></div>
+          <div id="divToBudgetStatus" style="font-size:12.5px;margin-top:6px;min-height:16px;"></div>
           <div style="margin-top:9px;padding-top:9px;border-top:1px dashed var(--border);">
-            <button type="button" id="btnApplyDivToBudget" onclick="applyBrokerToBudget()" style="font-size:12.5px;padding:5px 14px;background:var(--teal);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;">📊 配当を年間収支シートに反映</button>
-            <span style="font-size:11.5px;color:var(--ink-mute);margin-left:6px;">取込済みCSVの実受取額を月別集計し、収支シートの「配当」行を上書きします（証券会社CSVが最も正確）。</span>
-            <div id="divToBudgetStatus" style="font-size:12.5px;margin-top:6px;min-height:16px;"></div>
+            <button type="button" id="btnApplyDivToBudget" onclick="applyBrokerToBudget()" style="font-size:11.5px;padding:4px 10px;background:var(--bg-card);color:var(--ink-soft);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-family:inherit;">🔁 収支シートに再反映</button>
+            <span style="font-size:11.5px;color:var(--ink-mute);margin-left:6px;">取込時に自動反映されます。手動でやり直す場合のみ。</span>
           </div>
         </div>
         <details style="margin-bottom:10px;" id="hdEditorDetails">
@@ -3522,35 +3519,55 @@ function _brokerStatus(html) {
 // 自動取得を開始したときの名義を broker 別に保持（結果が返ったとき確実に使う）
 const _brokerFetchLabels = {};
 
+/** 「私／妻」を選ぶ小ダイアログ（楽天の自動取得で使用）。選択で名義文字列、キャンセルでnull */
+function pickBrokerAccount() {
+  return new Promise(resolve => {
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;';
+    ov.innerHTML = `<div style="background:var(--bg-card,#fff);border-radius:12px;padding:22px;max-width:360px;width:90%;box-shadow:0 12px 44px rgba(0,0,0,.32);font-family:inherit;text-align:center;">
+      <div style="font-size:15px;font-weight:800;color:var(--ink);margin-bottom:6px;">どちらの楽天口座を取得しますか？</div>
+      <div style="font-size:12px;color:var(--ink-soft);margin-bottom:16px;">選んだ名義で取り込みます（私と妻を分けて重複を防ぎます）。</div>
+      <div style="display:flex;gap:10px;justify-content:center;">
+        <button data-who="私" style="font-size:14px;font-weight:700;padding:9px 26px;border:none;border-radius:8px;background:var(--teal-deep);color:#fff;cursor:pointer;font-family:inherit;">私</button>
+        <button data-who="妻" style="font-size:14px;font-weight:700;padding:9px 26px;border:none;border-radius:8px;background:#c0392b;color:#fff;cursor:pointer;font-family:inherit;">妻</button>
+      </div>
+      <button data-who="" style="margin-top:14px;font-size:12px;padding:5px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg-subtle);cursor:pointer;font-family:inherit;color:var(--ink-soft);">キャンセル</button>
+    </div>`;
+    document.body.appendChild(ov);
+    ov.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b && e.target !== ov) return;
+      const who = b ? b.dataset.who : '';
+      ov.remove(); resolve(who || null);
+    });
+  });
+}
+
 function _brokerImport(d) {
   if (d.error) { _brokerStatus(`<span style="color:var(--rose);">❌ ${d.error}</span>`); return; }
   const bytes = Uint8Array.from(atob(d.csv), c => c.charCodeAt(0));
   let text;
   try { text = new TextDecoder('shift-jis').decode(bytes); } catch { text = new TextDecoder('utf-8').decode(bytes); }
   // SBIは私の1口座のみ。楽天は取得開始時に選んだ名義を使う。
-  const label = (d.broker === 'sbi') ? '私'
-    : (_brokerFetchLabels[d.broker] || (document.getElementById('divBrokerLabel') || {}).value || '');
+  const label = (d.broker === 'sbi') ? '私' : (_brokerFetchLabels[d.broker] || '私');
   const n = importBrokerCSV(text, label);
   renderDivPerStock();
   _brokerStatus(`<span style="color:var(--green);font-weight:700;">✅ ${label}：${n}件 取込完了</span>`);
+  // 取込したら収支シートへ自動反映
+  if (typeof applyBrokerToBudget === 'function') applyBrokerToBudget();
 }
 
 // 結果イベントを受け取る（ページ読み込み時に一度だけ登録）
 document.addEventListener('broker-fetch-result', (e) => _brokerImport(e.detail));
 
 async function brokerFetch(broker) {
-  // SBI＝私の1口座のみ／楽天＝私・妻の2口座 → 楽天だけ名義選択を必須にする
-  const labEl = document.getElementById('divBrokerLabel');
+  // SBI＝私の1口座のみ／楽天＝私・妻の2口座 → 楽天はボタン押下時に名義を選ばせる
   if (broker === 'sbi') {
     _brokerFetchLabels.sbi = '私';
   } else {
-    const lab = labEl ? labEl.value.trim() : '';
-    if (!lab) {
-      _brokerStatus('<span style="color:var(--rose);font-weight:700;">⚠️ 楽天は「私」「妻」の2口座があります。先に口座（名義）を選択してください。</span>');
-      if (labEl) labEl.focus();
-      return;
-    }
-    _brokerFetchLabels[broker] = lab;
+    const who = await pickBrokerAccount();   // 「私」「妻」を選ぶ小ダイアログ
+    if (!who) { _brokerStatus('<span style="color:var(--ink-mute);">取得をキャンセルしました。</span>'); return; }
+    _brokerFetchLabels[broker] = who;
   }
 
   // Tampermonkeyブリッジが入っているか確認
@@ -3905,12 +3922,20 @@ function renderHighDiv(){
 
   const sectorOpts = ['<option value="__all__">全業種</option>'].concat(sectors.map(s=>`<option value="${s}">${s}</option>`)).join('');
 
+  // 業種割合（allRowsと買い増し検討で共用）と配当合計（配当割合の分母）
+  const secPct={}; sectors.forEach(s=>{ secPct[s]=basisTotal? bySector[s]/basisTotal*100 : 0; });
+  const totalDivDisp = rows.reduce((s,r)=>s+dispVal(r),0);
+
   const allRows=[...rows].sort((a,b)=>b.evalv-a.evalv).map(r=>{
     const w=totalEval? (r.evalv/totalEval*100):0;
+    const dw=totalDivDisp? dispVal(r)/totalDivDisp*100 : 0;   // 配当割合
     const plc = r.pl>=0?'var(--green)':'var(--rose)';
-    return `<tr><td>${r.code}</td><td style="text-align:left;">${r.name}</td><td style="text-align:left;color:var(--ink-mute);font-size:11.5px;">${r.sector}</td>
+    const sp = secPct[r.sector]||0;
+    return `<tr><td>${r.code}</td><td style="text-align:left;">${r.name}</td>
+      <td style="text-align:left;color:var(--ink-mute);font-size:11.5px;white-space:nowrap;">${r.sector} <span style="color:var(--ink-mute);">(${sp.toFixed(1)}%)</span></td>
       <td style="text-align:right;">${r.shares.toLocaleString()}</td>
       <td style="text-align:right;">${yenComma(r.cost)}</td>
+      <td style="text-align:right;">${yenComma(r.purchase)}</td>
       <td style="text-align:right;">${yenComma(r.price)}</td>
       <td style="text-align:right;">${yenComma(r.evalv)}</td>
       <td style="text-align:right;">${w.toFixed(2)}%</td>
@@ -3918,13 +3943,13 @@ function renderHighDiv(){
       <td style="text-align:right;color:${plc};font-weight:700;">${r.purchase>0?`${r.pl>=0?'+':''}${(r.pl/r.purchase*100).toFixed(1)}%`:'–'}</td>
       <td style="text-align:right;">${yenComma(r.dps)}</td>
       <td style="text-align:right;font-weight:700;">${yenComma(Math.round(dispVal(r)))}</td>
+      <td style="text-align:right;${dw>=10?'background:#fff2b8;font-weight:700;':''}">${dw.toFixed(2)}%</td>
       <td style="text-align:right;">${r.ynow.toFixed(2)}%</td>
       <td style="text-align:right;color:var(--ink-mute);">${r.ycost.toFixed(2)}%</td>
       ${hdLinks(r.code)}</tr>`;
   }).join('');
 
   // ③ 買い増し検討：集中警告＋候補（お手本シートの10%黄色警告を拡張）
-  const secPct={}; sectors.forEach(s=>{ secPct[s]=basisTotal? bySector[s]/basisTotal*100 : 0; });
   const wPct=r=>totalEval? r.evalv/totalEval*100 : 0;
   const heavyStocks=rows.filter(r=>wPct(r)>=10).sort((a,b)=>wPct(b)-wPct(a));
   const heavySectors=sectors.filter(s=>secPct[s]>=25);
@@ -3949,7 +3974,7 @@ function renderHighDiv(){
       ${warnItems.length?`<div style="background:#fdf6e9;border:1px solid var(--amber,#d97706);border-radius:8px;padding:9px 12px;margin:6px 0 10px;font-size:12.5px;line-height:1.8;">${warnItems.join('<br>')}</div>`
         :`<div style="font-size:12.5px;color:var(--green);margin:6px 0 10px;">✅ 集中しすぎの銘柄・業種はありません（1銘柄10%・1業種25%・景気バランス50:50±10 の目安内）。</div>`}
       <div style="font-size:12px;color:var(--ink-mute);margin-bottom:4px;">おすすめ順＝時価利回りが高く、銘柄構成比と業種割合が小さい順（スコア＝時価利回り − 構成比×0.5 − 業種割合×0.1）。構成比8%以上の銘柄は除外。</div>
-      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:640px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種(割合)</th><th>構成比</th><th>利回り時価</th><th>利回り取得</th><th>損益%</th></tr></thead><tbody>${buyRows||'<tr><td colspan="8" style="color:var(--ink-mute);">候補なし（配当単価が未設定の銘柄は対象外）</td></tr>'}</tbody></table></div>
+      <div style="overflow-x:auto;"><table class="bg-table zebra" style="min-width:640px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種(割合)</th><th>構成比</th><th>利回り時価</th><th>利回り取得</th><th>損益%</th></tr></thead><tbody>${buyRows||'<tr><td colspan="8" style="color:var(--ink-mute);">候補なし（配当単価が未設定の銘柄は対象外）</td></tr>'}</tbody></table></div>
       <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">⚠️ これは保有銘柄の機械的な並び替えであり、投資助言ではありません。購入判断はIR・業績をご自身で確認してください。</div>
     </details>`;
 
@@ -3980,10 +4005,10 @@ function renderHighDiv(){
     ${buySection}
     <details style="margin-bottom:10px;" open><summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">🏅 配当金 Top20</summary>
       <div style="margin:4px 0 8px;"><label style="font-size:12.5px;color:var(--ink-soft);">業種 <select id="hdTopSector" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">${sectorOpts}</select></label></div>
-      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:420px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種</th><th>配当金</th></tr></thead><tbody id="hdTop20Body"></tbody></table></div>
+      <div style="overflow-x:auto;"><table class="bg-table zebra" style="min-width:420px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種</th><th>配当金</th></tr></thead><tbody id="hdTop20Body"></tbody></table></div>
     </details>
     <details><summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📋 全銘柄（${rows.length}）</summary>
-      <div style="overflow-x:auto;"><table class="bg-table" style="min-width:940px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>保有数</th><th>取得単価</th><th>株価</th><th>評価額</th><th>割合</th><th>損益</th><th>損益%</th><th>配当単価</th><th>配当金(${dispLabel})</th><th>利回り時価</th><th>利回り取得</th><th>IR</th><th>Y!</th></tr></thead><tbody>${allRows}</tbody></table></div>
+      <div style="overflow-x:auto;"><table class="bg-table zebra" style="min-width:1040px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種(割合)</th><th>保有数</th><th>取得単価</th><th>購入額</th><th>株価</th><th>評価額</th><th>割合</th><th>損益</th><th>損益%</th><th>配当単価</th><th>配当金(${dispLabel})</th><th>配当割合</th><th>利回り時価</th><th>利回り取得</th><th>IR</th><th>Y!</th></tr></thead><tbody>${allRows}</tbody></table></div>
     </details>`;
 
   // チャート
@@ -4132,6 +4157,7 @@ async function showBrokerImportModal(files){
     const res=document.getElementById('divBrokerResult');
     if(res) res.innerHTML=`<span style="color:var(--green);font-weight:700;">✅ 取込完了 — ${detail.join('　/　')}</span>`;
     renderDivPerStock();
+    if(typeof applyBrokerToBudget==='function') applyBrokerToBudget();  // 収支シートへ自動反映
   });
 }
 
