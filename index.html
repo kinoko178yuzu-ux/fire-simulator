@@ -4722,10 +4722,38 @@ const STORAGE_KEY = 'sideFireCalculator_v4';
 /** ============================
  *  保存・読込
  *  ============================ */
+/** ★NEW 蓄積データの“濃さ”を数値化（多重タブ・同期の空データ上書き防止に使う）
+ *  budget年数・ポートフォリオ銘柄数・配当実績件数・資産推移記録数を合算 */
+function _dataRichness(obj) {
+  if (!obj) return 0;
+  let s = 0;
+  try { const b = JSON.parse(obj.budgetSheetJson || '{}'); s += Object.keys(b).filter(k=>/^\d{4}$/.test(k)).length * 5; } catch {}
+  try { s += Object.keys(JSON.parse(obj.divPortfolioJson || '{}')).length; } catch {}
+  try { s += (JSON.parse(obj.divActualJson || '{"txns":[]}').txns || []).length; } catch {}
+  try { s += Object.keys(JSON.parse(obj.accountHistoryJson || '{}')).length * 3; } catch {}
+  return s;
+}
+/** これから保存する内容が、既存の蓄積データを空で上書きしてしまうか（多重タブ事故防止） */
+function _wouldClobber(newData) {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return false;
+  let stored; try { stored = JSON.parse(raw); } catch { return false; }
+  return _dataRichness(stored) >= 5 && _dataRichness(newData) === 0;
+}
+
+let _clobberWarned = false;
 function saveDataSilent() {
   const data = {};
   INPUT_IDS.forEach(id => { data[id] = inputs[id].value; });
   data._loanPayoffToggle = document.querySelector('.toggle-option.active')?.dataset.loanPayoff || 'yes';
+  // ★NEW 多重タブ保護：内容の薄いこのタブが、別タブの蓄積データを消すのを防ぐ
+  if (_wouldClobber(data)) {
+    if (!_clobberWarned && typeof showToast === 'function') {
+      showToast('⚠️ 別のタブに新しいデータがあります。このタブは再読み込みしてください');
+      _clobberWarned = true;
+    }
+    return;
+  }
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); showSaveIndicator(); } catch(e) {}
   autoBackupTick();
 }
@@ -4797,6 +4825,19 @@ function resetData() {
 
 window.addEventListener('load', () => { if (localStorage.getItem(STORAGE_KEY)) loadData(); });
 document.getElementById('resetBtn').addEventListener('click', resetData);
+
+/** ★NEW 多重タブ同期：別タブがより新しい（同等以上に濃い）データを保存したら、
+ *  このタブが未編集なら自動で読み直して“幻のリセット表示”を防ぐ */
+let _userDirty = false;
+window.addEventListener('storage', (e) => {
+  if (e.key !== STORAGE_KEY || !e.newValue) return;
+  if (_userDirty) return;   // このタブで編集中なら勝手に上書きしない
+  try {
+    const incoming = JSON.parse(e.newValue);
+    const cur = {}; INPUT_IDS.forEach(id => { if (inputs[id]) cur[id] = inputs[id].value; });
+    if (_dataRichness(incoming) >= _dataRichness(cur)) { loadData(); }
+  } catch {}
+});
 
 /** ダウンロード/アップロード */
 function downloadJSON() {
@@ -4906,6 +4947,8 @@ function cloudSaveDebounced() {
   setSyncDot('saving');
   cloudSaveTimer = setTimeout(() => {
     const data = gatherAllData();
+    // ★NEW 内容が空ならクラウドへ上げない（多重タブの空データがクラウドを汚さない）
+    if (_dataRichness(data) === 0 && !_userDirty) { setSyncDot('on'); return; }
     data._updatedAt = Date.now();
     fbDb.collection('fireSettings').doc(hashPassphrase(syncPassphrase)).set(data)
       .then(() => setSyncDot('on'))
@@ -4922,7 +4965,18 @@ function startCloudSubscription() {
       doc => {
         // 自分の書き込みが反映されただけのときはスキップ
         if (doc.metadata.hasPendingWrites) return;
-        if (doc.exists) { applyAllData(doc.data()); }
+        if (doc.exists) {
+          // ★NEW 空/薄いクラウドデータで、このデバイスの蓄積データを消さない
+          const cloudR = _dataRichness(doc.data());
+          const localR = _dataRichness(gatherAllData());
+          if (cloudR === 0 && localR >= 5) {
+            // クラウドが空 → 逆にこのデバイスの内容を再アップロードして守る
+            const data = gatherAllData(); data._updatedAt = Date.now();
+            fbDb.collection('fireSettings').doc(hashPassphrase(syncPassphrase)).set(data);
+          } else {
+            applyAllData(doc.data());
+          }
+        }
         setSyncDot('on');
       },
       err => { console.warn('sync error', err); setSyncDot('error'); }
@@ -4941,10 +4995,18 @@ function connectSync() {
   setSyncModalStatus('接続中...', 'var(--ink-soft)');
   const ref = fbDb.collection('fireSettings').doc(hashPassphrase(pass));
   ref.get().then(doc => {
-    if (doc.exists) {
-      // 既存データあり → 取り込む
+    const localData = gatherAllData();
+    const localR = _dataRichness(localData);
+    const cloudR = doc.exists ? _dataRichness(doc.data()) : 0;
+    if (doc.exists && cloudR >= localR) {
+      // クラウドの方が同等以上に濃い → 取り込む（別デバイスの最新データ）
       applyAllData(doc.data());
-      setSyncModalStatus('✅ 同期しました（既存データを読み込み）', 'var(--green)');
+      setSyncModalStatus('✅ 同期しました（クラウドの既存データを読み込み）', 'var(--green)');
+    } else if (doc.exists && localR > cloudR) {
+      // このデバイスの方が濃い → 空/古いクラウドで上書きされないよう、こちらを保存
+      const data = gatherAllData(); data._updatedAt = Date.now();
+      ref.set(data);
+      setSyncModalStatus('✅ 同期しました（このデバイスの内容が新しいためクラウドへ保存）', 'var(--green)');
     } else {
       // 新規 → 今の内容をアップロード
       const data = gatherAllData(); data._updatedAt = Date.now();
@@ -6899,8 +6961,8 @@ function debouncedSave() {
 }
 for (const id of INPUT_IDS) {
   if (inputs[id]) {
-    inputs[id].addEventListener('input',  () => { calculate(); debouncedSave(); });
-    inputs[id].addEventListener('change', () => { calculate(); debouncedSave(); });
+    inputs[id].addEventListener('input',  () => { _userDirty = true; calculate(); debouncedSave(); });
+    inputs[id].addEventListener('change', () => { _userDirty = true; calculate(); debouncedSave(); });
   }
 }
 document.getElementById('runSimBtn').addEventListener('click', runSimulation);
