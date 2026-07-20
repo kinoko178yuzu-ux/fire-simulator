@@ -3309,6 +3309,7 @@ function refreshFromMF(text){
     agg[code].shares+=shares; agg[code].evalSum+=evalv; agg[code].purSum+=purchase;
   }
   const p=getPortfolio(); let upd=0,add=0; const miss=[];
+  const sold=Object.keys(p).filter(c=>!agg[c]).map(c=>({code:c,name:(p[c]||{}).name||c}));  // 取込に無い＝売却の可能性
   Object.keys(agg).forEach(code=>{
     const a=agg[code]; const sh=a.shares;
     const price = sh? Math.round(a.evalSum/sh) : 0;
@@ -3323,7 +3324,7 @@ function refreshFromMF(text){
   });
   setPortfolio(p);
   if(typeof stampDataMeta==='function') stampDataMeta('portfolio');
-  return {upd,add,miss};
+  return {upd,add,miss,sold};
 }
 
 /** 計算済み明細行の配列を返す */
@@ -3403,13 +3404,14 @@ function renderHdEditor(){
       <td><input class="hd-e-dps" type="number" value="${dps||''}" placeholder="円/株" style="width:72px;font-size:12.5px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;text-align:right;font-family:inherit;"></td>
       <td><input class="hd-e-months" value="${months}" placeholder="6,12" style="width:60px;font-size:12.5px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;font-family:inherit;"></td>
       <td><input class="hd-e-nisa" type="number" value="${+s.nisaShares||''}" placeholder="0" min="0" title="NISA口座で保有している株数（全株NISAなら保有数と同じ）。その分は国内課税なしで税引後配当を計算" style="width:60px;font-size:12.5px;padding:3px 5px;border:1px solid var(--border);border-radius:3px;text-align:right;font-family:inherit;"></td>
-      ${hdLinks(code)}</tr>`;
+      ${hdLinks(code)}
+      <td style="text-align:center;"><button type="button" class="hd-e-del" title="この銘柄を削除（売却時など）" style="background:none;border:none;color:var(--rose);font-size:15px;cursor:pointer;line-height:1;">×</button></td></tr>`;
   }).join('');
   host.innerHTML=`<div style="margin-bottom:6px;">
       <button type="button" id="hdAutoNisaBtn" style="font-size:12px;padding:4px 12px;background:var(--teal-bg);color:var(--teal-deep);border:1px solid var(--teal);border-radius:5px;cursor:pointer;font-family:inherit;font-weight:600;">🏦 NISA保有数を配当CSVから自動判定</button>
       <span style="font-size:11.5px;color:var(--ink-mute);margin-left:6px;">取込済みCSVの口座区分（NISA成長投資枠など）から推定します。手入力での修正も可。</span>
     </div>
-    <table class="bg-table" style="min-width:640px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>景気</th><th>配当単価</th><th>支払月</th><th>NISA株数</th><th>IR</th><th>Y!</th></tr></thead><tbody>${rows}</tbody></table>`;
+    <table class="bg-table" style="min-width:680px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種</th><th>景気</th><th>配当単価</th><th>支払月</th><th>NISA株数</th><th>IR</th><th>Y!</th><th>削除</th></tr></thead><tbody>${rows}</tbody></table>`;
   const anBtn=document.getElementById('hdAutoNisaBtn');
   if(anBtn) anBtn.addEventListener('click', hdAutoNisa);
   host.querySelectorAll('tr[data-code]').forEach(tr=>{
@@ -3425,6 +3427,10 @@ function renderHdEditor(){
     };
     sec.addEventListener('change',commit); dpsEl.addEventListener('change',commit); monEl.addEventListener('change',commit);
     if(nisaEl) nisaEl.addEventListener('change',commit);
+    const delBtn=tr.querySelector('.hd-e-del');
+    if(delBtn) delBtn.addEventListener('click',()=>{ const pp=getPortfolio(); const nm=(pp[code]||{}).name||code;
+      if(!confirm(`「${code} ${nm}」を削除しますか？（売却時など）`)) return;
+      delete pp[code]; setPortfolio(pp); renderHighDiv(); renderDivCompare(); renderHdEditor(); });
   });
 }
 
@@ -3655,7 +3661,7 @@ function mfAssetApply(d){
           fundV:  funds.reduce((s,r)=>s+(+r.evalv||0),0),
           stockPL, fundPL, exPL: total-stockPL-fundPL, accounts:byBank };
   setAccountHistory(h);
-  let pf={upd:0,add:0,miss:[]};
+  let pf={upd:0,add:0,miss:[],sold:[]};
   if(stocks.length) pf=refreshFromStructured(stocks);   // マネフォ貼付と同等の更新
   if(typeof stampDataMeta==='function') stampDataMeta('mfAsset');
   renderAssetTimeline();
@@ -3664,15 +3670,44 @@ function mfAssetApply(d){
   if(typeof calculate==='function') calculate();
   if(st) st.innerHTML=`<span style="color:var(--green);font-weight:700;">✅ ${ym.replace('-','/')}分を記録（総資産 ${(total/10000).toFixed(0)}万円・現金${cash.length}件・株式${stocks.length}件・投信${funds.length}件）</span>`+
     ((pf.add||pf.upd)?`<span style="color:var(--ink-mute);font-size:11.5px;">　株式ポートフォリオも更新（更新${pf.upd}・新規${pf.add}${pf.miss.length?`・要設定${pf.miss.length}`:''}）</span>`:'');
+  // マネフォ資産は全保有の完全スナップショット → 取込に無い銘柄は売却の可能性
+  if(stocks.length && pf.sold && pf.sold.length && typeof promptRemoveSold==='function') promptRemoveSold(pf.sold);
 }
 
 /** マネフォ資産の株式テーブルからポートフォリオを更新（貼付と同等・複数口座は合算） */
+/** ★NEW 取込データに無かった保有銘柄（売却の可能性）を確認して削除。安全のため自動削除はしない */
+function promptRemoveSold(sold){
+  if(!sold || !sold.length) return;
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;';
+  const rows=sold.map(s=>`<label style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12.5px;">
+      <input type="checkbox" class="sold-cb" data-code="${s.code}" checked>
+      <b style="font-family:'JetBrains Mono',monospace;">${s.code}</b> <span>${esc(s.name)}</span></label>`).join('');
+  ov.innerHTML=`<div style="background:var(--bg-card,#fff);border-radius:12px;padding:20px;max-width:420px;width:92%;max-height:82vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.32);font-family:inherit;">
+    <div style="font-size:15px;font-weight:800;color:var(--ink);margin-bottom:6px;">🗑 売却された銘柄はありますか？</div>
+    <div style="font-size:12px;color:var(--ink-soft);margin-bottom:6px;line-height:1.6;">今回の取込データに<b>含まれていなかった保有銘柄</b>が ${sold.length}件 あります。売却済みならチェックを入れて削除してください。<br><span style="color:var(--rose);">※1口座分だけを貼り付けた場合、他口座の銘柄がここに出ます。その場合は「残す」を選んでください。</span></div>
+    <div style="border:1px solid var(--border);border-radius:8px;padding:8px 12px;margin:8px 0;">${rows}</div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button type="button" id="soldKeep" style="font-size:12.5px;padding:7px 16px;border:1px solid var(--border);border-radius:6px;background:var(--bg-subtle);cursor:pointer;font-family:inherit;">全部残す</button>
+      <button type="button" id="soldDel" style="font-size:12.5px;padding:7px 18px;border:none;border-radius:6px;background:var(--rose);color:#fff;cursor:pointer;font-family:inherit;font-weight:700;">チェックした銘柄を削除</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  ov.querySelector('#soldKeep').addEventListener('click',()=>ov.remove());
+  ov.querySelector('#soldDel').addEventListener('click',()=>{
+    const codes=[...ov.querySelectorAll('.sold-cb:checked')].map(c=>c.dataset.code);
+    if(codes.length){ const p=getPortfolio(); codes.forEach(c=>delete p[c]); setPortfolio(p);
+      renderHighDiv(); renderDivCompare(); renderHdEditor(); }
+    ov.remove();
+  });
+}
+
 function refreshFromStructured(list){
   const agg={};
   list.forEach(r=>{ const code=(r.code||'').toUpperCase(); if(!HD_CODE_RE.test(code)||!(+r.shares)) return;
     if(!agg[code]) agg[code]={name:r.name||'',shares:0,evalSum:0,purSum:0};
     agg[code].shares+=+r.shares; agg[code].evalSum+=(+r.evalv||0); agg[code].purSum+=((+r.evalv||0)-(+r.pl||0)); });
   const p=getPortfolio(); let upd=0,add=0; const miss=[];
+  const sold=Object.keys(p).filter(c=>!agg[c]).map(c=>({code:c,name:(p[c]||{}).name||c}));  // 取込に無い＝売却の可能性
   Object.keys(agg).forEach(code=>{ const a=agg[code]; const sh=a.shares;
     const price=sh?Math.round(a.evalSum/sh):0, cost=sh?Math.round(a.purSum/sh):0;
     if(p[code]){ p[code].shares=sh; p[code].price=price; p[code].cost=cost; if(a.name) p[code].name=a.name; upd++; }
@@ -3681,7 +3716,7 @@ function refreshFromStructured(list){
       add++; if(!m) miss.push(code); } });
   setPortfolio(p);
   if(typeof stampDataMeta==='function') stampDataMeta('portfolio');
-  return {upd,add,miss};
+  return {upd,add,miss,sold};
 }
 
 let assetTimelineChart=null;
@@ -4067,11 +4102,13 @@ function initHighDiv(){
   if(btn) btn.addEventListener('click',()=>{
     const ta=document.getElementById('hdPasteArea'); const txt=ta?ta.value:'';
     if(!txt.trim()){ if(res) res.innerHTML='<span style="color:var(--rose);">貼り付けが空です</span>'; return; }
-    const {upd,add,miss}=refreshFromMF(txt);
+    const {upd,add,miss,sold}=refreshFromMF(txt);
     if(!upd&&!add){ if(res) res.innerHTML='<span style="color:var(--rose);">銘柄行が見つかりません（株式・現物の表を貼ってください）</span>'; return; }
     let m = `<span style="color:var(--green);font-weight:700;">✅ 更新 ${upd} / 新規 ${add}</span>`;
     if(miss.length) m += `　<span style="color:var(--amber);">未マスター ${miss.length}件（${miss.join(', ')}）は業種・配当単価が未設定です</span>`;
+    if(sold&&sold.length) m += `　<span style="color:var(--ink-mute);">取込に無い ${sold.length}件を検出</span>`;
     if(res) res.innerHTML=m; if(ta) ta.value=''; renderHighDiv(); renderDivCompare(); renderHdEditor();
+    if(typeof promptRemoveSold==='function') promptRemoveSold(sold);
   });
   const addBtn=document.getElementById('hdAddBtn');
   if(addBtn) addBtn.addEventListener('click', hdManualAdd);
