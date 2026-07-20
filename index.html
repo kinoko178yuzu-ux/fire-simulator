@@ -2064,7 +2064,6 @@ select:focus { border-color: var(--teal); }
         <div style="font-size:13px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
           <strong>予定</strong>は上の高配当株ポートフォリオの予想配当（配当単価×株数）から自動。<strong>実績</strong>は年間収支シートの📈配当行（マネーフォワードCSVの配当所得）から自動集計。毎月「予定どおり入金されたか」を比較できます。
         </div>
-        <input type="hidden" id="dividendListJson" value="[]">
         <input type="hidden" id="divActualJson" value='{"txns":[]}'>
         <input type="hidden" id="dataMetaJson" value="{}">
         <input type="hidden" id="accountHistoryJson" value="{}">
@@ -3096,97 +3095,7 @@ document.addEventListener('DOMContentLoaded', () => { renderBudgetSheet(); });
 /** ====================================
  *  ★NEW 配当管理（銘柄リスト・予定vs実績）
  *  ==================================== */
-function getDivList() {
-  try { const a = JSON.parse(document.getElementById('dividendListJson').value || '[]'); return Array.isArray(a) ? a : []; }
-  catch { return []; }
-}
-function setDivList(arr, opts = {}) {
-  document.getElementById('dividendListJson').value = JSON.stringify(arr);
-  if (!opts.skipRender) renderDivStocks();
-  renderDivCompare();
-  if (typeof debouncedSave === 'function' && !isApplyingCloud) debouncedSave();
-}
-
-/** 銘柄行を描画 */
-function renderDivStocks() {
-  const host = document.getElementById('divStockList');
-  if (!host) return;
-  const arr = getDivList();
-  host.innerHTML = '';
-  const inS = 'padding:5px 6px;font-size:13px;border:1px solid var(--border);background:var(--bg-subtle);font-family:inherit;';
-  arr.forEach((s, idx) => {
-    const row = document.createElement('div');
-    row.className = 'div-stock-row';
-    row.style.cssText = 'background:var(--bg-card);border:1px solid var(--border-soft);border-radius:6px;padding:7px 8px;display:flex;flex-direction:column;gap:5px;';
-    const monthBtns = Array.from({length:12}, (_,m) =>
-      `<button type="button" class="dv-month ${ (s.months||[]).includes(m+1) ? 'on' : '' }" data-m="${m+1}">${m+1}</button>`).join('');
-    row.innerHTML = `
-      <div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;">
-        <input type="text" class="dv-name" value="${esc(s.name||'')}" placeholder="銘柄名" style="${inS}flex:1;min-width:110px;">
-        <input type="number" class="dv-shares" value="${s.shares||''}" placeholder="株数" min="0" style="${inS}width:64px;text-align:right;" title="保有数">
-        <span style="font-size:11.5px;color:var(--ink-mute);">株</span>
-        <input type="number" class="dv-annual" value="${s.annual||''}" placeholder="年間配当" min="0" step="100" style="${inS}width:84px;text-align:right;" title="年間予想配当（円）">
-        <span style="font-size:11.5px;color:var(--ink-mute);">円/年</span>
-        <button type="button" class="dv-del" style="background:none;border:none;font-size:18.5px;color:var(--rose);cursor:pointer;padding:0 2px;line-height:1;">×</button>
-      </div>
-      <div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap;">
-        <span style="font-size:11px;color:var(--ink-mute);margin-right:2px;">支払月</span>${monthBtns}
-      </div>`;
-    const commit = () => {
-      const a = getDivList();
-      a[idx] = {
-        ...a[idx],
-        name:   row.querySelector('.dv-name').value.trim(),
-        shares: +row.querySelector('.dv-shares').value || 0,
-        annual: +row.querySelector('.dv-annual').value || 0,
-        months: Array.from(row.querySelectorAll('.dv-month.on')).map(b => +b.dataset.m),
-      };
-      setDivList(a, { skipRender: true }); // 入力中のフォーカスを保つ
-    };
-    row.querySelectorAll('.dv-name,.dv-shares,.dv-annual').forEach(el => el.addEventListener('input', commit));
-    row.querySelectorAll('.dv-month').forEach(b => b.addEventListener('click', () => { b.classList.toggle('on'); commit(); }));
-    row.querySelector('.dv-del').addEventListener('click', () => { const a = getDivList(); a.splice(idx,1); setDivList(a); });
-    host.appendChild(row);
-  });
-  // 年間予想合計
-  const totalAnnual = arr.reduce((s, x) => s + (+x.annual || 0), 0);
-  if (arr.length) {
-    const sum = document.createElement('div');
-    sum.style.cssText = 'text-align:right;font-size:14px;font-weight:700;color:var(--teal-deep);padding:4px 6px;';
-    sum.textContent = `年間予想配当 合計: ${totalAnnual.toLocaleString()}円（月平均 ${(totalAnnual/12/10000).toFixed(1)}万）`;
-    host.appendChild(sum);
-  }
-}
-
-/** MFポートフォリオ画面の貼り付けテキストを解析 */
-function parseMFPortfolio(text) {
-  const out = [];
-  for (const raw of text.split(/\r?\n/)) {
-    const ln = raw.trim();
-    if (!ln || ln.startsWith('合計') || ln.includes('銘柄名') || ln.startsWith('株式')) continue;
-    const cells = ln.split(/\t+|\s+/).filter(Boolean);
-    if (cells.length < 3) continue;
-    if (!/^\d{3,4}[A-Z]?$/.test(cells[0])) continue; // 行頭=銘柄コード
-    const name = cells[1];
-    const shares = parseInt((cells[2]||'').replace(/,/g,''), 10) || 0;
-    if (!name || !shares) continue;
-    out.push({ code: cells[0], name, shares });
-  }
-  return out;
-}
-
-/** 解析結果を銘柄リストへマージ（同名は保有数のみ更新、予想配当・支払月は保持） */
-function mergePortfolio(parsed) {
-  const arr = getDivList();
-  let added = 0, updated = 0;
-  parsed.forEach(p => {
-    const hit = arr.find(s => s.name === p.name || (p.code && s.code === p.code));
-    if (hit) { hit.shares = p.shares; hit.code = p.code; updated++; }
-    else { arr.push({ code: p.code, name: p.name, shares: p.shares, annual: 0, months: [] }); added++; }
-  });
-  setDivList(arr);
-  return { added, updated };
-}
+// （旧・配当リスト手入力系統は divPortfolioJ​son のポートフォリオ系に統合済み。死にコードを削除）
 
 /** 予定 vs 実績（予定=ポートフォリオの予想配当・年間 / 実績=年間収支シートの配当行） */
 function renderDivCompare() {
@@ -4199,22 +4108,8 @@ async function showBrokerImportModal(files){
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  renderDivStocks(); renderDivCompare();
+  renderDivCompare();
   initHighDiv();
-  const addBtn = document.getElementById('divAddBtn');
-  if (addBtn) addBtn.addEventListener('click', () => {
-    const a = getDivList(); a.push({ name:'', shares:0, annual:0, months:[] }); setDivList(a);
-  });
-  const parseBtn = document.getElementById('divParseBtn');
-  if (parseBtn) parseBtn.addEventListener('click', () => {
-    const ta = document.getElementById('divPasteArea');
-    const res = document.getElementById('divParseResult');
-    const parsed = parseMFPortfolio(ta.value || '');
-    if (!parsed.length) { if (res) res.innerHTML = '<span style="color:var(--rose);">銘柄行が見つかりません。表の行（銘柄コードから始まる行）を含めてコピーしてください。</span>'; return; }
-    const { added, updated } = mergePortfolio(parsed);
-    if (res) res.innerHTML = `<span style="color:var(--green);font-weight:700;">✅ ${parsed.length}銘柄を解析 — 新規 ${added} / 更新 ${updated}</span>　<span style="color:var(--ink-mute);">各銘柄の年間予想配当と支払月を入力してください。</span>`;
-    ta.value = '';
-  });
 });
 
 /** ====================================
@@ -4285,7 +4180,7 @@ const INPUT_IDS = [
   'monthlyInvest','bonusInvest','returnAcc','returnRet','volatility','nisaRatio',
   'divGrowth','divYield','divNisaRatio',
   'monthlyLifeExHouse','annualSpecial','sideIncomeGross','sideExpenseRatio','sideIncomeEndAge','inflation',
-  'budgetSheetJson','dividendListJson','divPortfolioJson','divActualJson','assetHistoryJson',
+  'budgetSheetJson','divPortfolioJson','divActualJson','assetHistoryJson',
   'loanBalance','loanRate','loanYears','loanMonthly','loanBonus',
   'taxCreditYears','taxCreditAmount','loanPayoff','payoffTiming','payoffCustomYear',
   'child1Path','child2Path',
@@ -4873,7 +4768,7 @@ function loadData() {
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
     if (typeof renderSpotEvents === 'function') renderSpotEvents();
     if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
-    if (typeof renderDivStocks === 'function') { renderDivStocks(); renderDivCompare(); }
+    if (typeof renderDivCompare === 'function') { renderDivCompare(); }
     if (typeof renderHighDiv === 'function') renderHighDiv();
     if (typeof renderHdEditor === 'function') renderHdEditor();
     if (typeof renderAssetHistory === 'function') renderAssetHistory();
@@ -4983,7 +4878,7 @@ function applyAllData(data) {
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
     if (typeof renderSpotEvents === 'function') renderSpotEvents();  // ライフイベントリストを再描画
     if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
-    if (typeof renderDivStocks === 'function') { renderDivStocks(); renderDivCompare(); }
+    if (typeof renderDivCompare === 'function') { renderDivCompare(); }
     if (typeof renderHighDiv === 'function') renderHighDiv();
     if (typeof renderHdEditor === 'function') renderHdEditor();
     if (typeof renderAssetHistory === 'function') renderAssetHistory();
