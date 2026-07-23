@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      1.8
+// @version      1.9
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
@@ -204,7 +204,7 @@
         new Promise((_, rej) => setTimeout(() =>
           rej(new Error('ダウンロードがタイムアウトしました(v1.8)。ボタン: ' + csvBtnDiag() +
             ' ／ 通信: ' + netDiag(W, t0) +
-            ' ／ CSVがダウンロードフォルダに保存されていれば📁ファイル選択で取込できます')), 20000))
+            ' ／ CSVがダウンロードフォルダに保存されていれば📁ファイル選択で取込できます')), 10000))
       ]);
     }
     return buf;
@@ -300,17 +300,34 @@
         return;
       }
 
-      try {
-        const buf = await downloadCsv(dlPromise);
+      const finishSbi = (buf) => {
         GM_deleteValue('sbiReq');
         GM_setValue('sbiRes', { csv: toB64(buf), ts: Date.now() });
         banner.style.background = '#16a34a';
         banner.textContent = '✅ CSV取得完了。3秒後にこのタブを閉じます…';
         setTimeout(() => window.close(), 3000);
+      };
+
+      try {
+        const buf = await downloadCsv(dlPromise);
+        finishSbi(buf);
       } catch (e) {
-        GM_setValue('sbiRes', { error: e.message, ts: Date.now() });
-        banner.style.background = '#b8413d';
-        banner.textContent = '❌ ' + e.message;
+        // 自動クリックが効かないサイト対策：本物の1クリックを待ち受ける（5分）
+        // ユーザーが「CSVダウンロード」を押せば、ページ本体に張った網が捕まえて自動取込する
+        banner.style.background = '#d97706';
+        banner.textContent = '👆 あと1クリック：この画面の「CSVダウンロード」を押してください（押せば自動で取り込みます）';
+        try {
+          const buf2 = await Promise.race([
+            dlPromise,
+            new Promise((_, rej) => setTimeout(() =>
+              rej(new Error('待機時間切れ（5分）。CSVがダウンロードフォルダに保存されている場合は、アプリの📁ファイル選択で取込してください')), 300000))
+          ]);
+          finishSbi(buf2);
+        } catch (e2) {
+          GM_setValue('sbiRes', { error: e2.message, ts: Date.now() });
+          banner.style.background = '#b8413d';
+          banner.textContent = '❌ ' + e2.message;
+        }
       }
     })();
     return;
