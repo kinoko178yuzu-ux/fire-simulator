@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      1.6
+// @version      1.7
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
@@ -14,6 +14,7 @@
 // @grant        GM_getValue
 // @grant        GM_deleteValue
 // @grant        GM_addValueChangeListener
+// @grant        unsafeWindow
 // @run-at       document-idle
 // ==/UserScript==
 (function () {
@@ -51,29 +52,37 @@
     let resolve;
     const promise = new Promise(res => { resolve = res; });
     const looksCsvText = (s) => /受渡日|入金日|約定日|銘柄コード|受取/.test(String(s).slice(0, 300));
+    // ★重要: Tampermonkeyはサンドボックスで動くため、ページ本体(unsafeWindow)に網を張る。
+    //   これをしないと、サイトのJSが行うfetch/XHR/blob生成が一切見えない。
+    const W = (typeof unsafeWindow !== 'undefined' && unsafeWindow) ? unsafeWindow : window;
 
-    // ① blob
-    const orig = URL.createObjectURL.bind(URL);
-    URL.createObjectURL = function (blob) {
-      blob.arrayBuffer().then(buf => {
-        if (new Uint8Array(buf)[0] !== 0x3C && buf.byteLength > 100) resolve(buf);
-      }).catch(() => {});
-      return orig(blob);
-    };
-
-    // ② XHR
+    // ① blob（ページ本体の URL.createObjectURL）
     try {
-      const XO = XMLHttpRequest.prototype.open, XS = XMLHttpRequest.prototype.send;
-      XMLHttpRequest.prototype.open = function (m, u) { this._fireUrl = String(u || ''); return XO.apply(this, arguments); };
-      XMLHttpRequest.prototype.send = function () {
+      const orig = W.URL.createObjectURL.bind(W.URL);
+      W.URL.createObjectURL = function (blob) {
+        try {
+          blob.arrayBuffer().then(buf => {
+            if (new Uint8Array(buf)[0] !== 0x3C && buf.byteLength > 100) resolve(buf);
+          }).catch(() => {});
+        } catch {}
+        return orig(blob);
+      };
+    } catch {}
+
+    // ② XHR（ページ本体のプロトタイプ）
+    try {
+      const XP = W.XMLHttpRequest.prototype;
+      const XO = XP.open, XS = XP.send;
+      XP.open = function (m, u) { this._fireUrl = String(u || ''); return XO.apply(this, arguments); };
+      XP.send = function () {
         this.addEventListener('load', () => {
           try {
             const ct = (this.getResponseHeader('content-type') || '') + ';' + (this.getResponseHeader('content-disposition') || '');
             const hit = /csv|attachment|octet-stream/i.test(ct) || /csv|download/i.test(this._fireUrl || '');
             if (!hit) return;
             const r = this.response;
-            if (r instanceof ArrayBuffer && r.byteLength > 100) resolve(r);
-            else if (r instanceof Blob) r.arrayBuffer().then(b => { if (b.byteLength > 100) resolve(b); });
+            if (r instanceof W.ArrayBuffer || r instanceof ArrayBuffer) { if (r.byteLength > 100) resolve(r); }
+            else if ((W.Blob && r instanceof W.Blob) || r instanceof Blob) r.arrayBuffer().then(b => { if (b.byteLength > 100) resolve(b); });
             else if (typeof r === 'string' && looksCsvText(r)) resolve(new TextEncoder().encode(r).buffer);
           } catch {}
         });
@@ -81,21 +90,25 @@
       };
     } catch {}
 
-    // ③ fetch
+    // ③ fetch（ページ本体）
     try {
-      const OF = window.fetch;
-      window.fetch = async function (...a) {
-        const res = await OF.apply(this, a);
+      const OF = W.fetch;
+      W.fetch = function (...a) {
+        const p = OF.apply(this, a);
         try {
-          const url = String((a[0] && a[0].url) || a[0] || '');
-          const ct = (res.headers.get('content-type') || '') + ';' + (res.headers.get('content-disposition') || '');
-          if (/csv|attachment|octet-stream/i.test(ct) || /csv|download/i.test(url)) {
-            res.clone().arrayBuffer().then(buf => {
-              if (buf.byteLength > 100 && new Uint8Array(buf)[0] !== 0x3C) resolve(buf);
-            }).catch(() => {});
-          }
+          p.then(res => {
+            try {
+              const url = String((a[0] && a[0].url) || a[0] || '');
+              const ct = (res.headers.get('content-type') || '') + ';' + (res.headers.get('content-disposition') || '');
+              if (/csv|attachment|octet-stream/i.test(ct) || /csv|download/i.test(url)) {
+                res.clone().arrayBuffer().then(buf => {
+                  if (buf.byteLength > 100 && new Uint8Array(buf)[0] !== 0x3C) resolve(buf);
+                }).catch(() => {});
+              }
+            } catch {}
+          }).catch(() => {});
         } catch {}
-        return res;
+        return p;
       };
     } catch {}
 
@@ -143,7 +156,7 @@
       buf = await Promise.race([
         downloadPromise,
         new Promise((_, rej) => setTimeout(() =>
-          rej(new Error('ダウンロードがタイムアウトしました。診断: ' + csvBtnDiag())), 20000))
+          rej(new Error('ダウンロードがタイムアウトしました(v1.7)。診断: ' + csvBtnDiag() + ' ／ CSVがダウンロードフォルダに保存されていれば、アプリの📁ファイル選択で取込できます')), 20000))
       ]);
     }
     return buf;
