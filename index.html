@@ -2496,8 +2496,8 @@ function getBudgetYear(b, yr) {
   const y = yr !== undefined ? yr : activeBudgetYear;
   return (b[y] && typeof b[y] === 'object') ? b[y] : {};
 }
-function budgetRowArr(b, key) {
-  const yd = getBudgetYear(b);
+function budgetRowArr(b, key, yr) {
+  const yd = getBudgetYear(b, yr);
   return (yd[key] && yd[key].length === 12) ? yd[key] : new Array(12).fill(0);
 }
 /** MF取込の中項目内訳 { 月idx: { 行key: { 中項目名: 万円 } } } */
@@ -3109,6 +3109,7 @@ document.addEventListener('DOMContentLoaded', () => { renderBudgetSheet(); });
 // （旧・配当リスト手入力系統は divPortfolioJ​son のポートフォリオ系に統合済み。死にコードを削除）
 
 /** 予定 vs 実績（予定=ポートフォリオの予想配当・年間 / 実績=年間収支シートの配当行） */
+let divCompareYear = null;   // 配当 予定vs実績カードで表示中の年（nullなら自動選択）
 function renderDivCompare() {
   const host = document.getElementById('divCompare');
   if (!host) return;
@@ -3126,10 +3127,21 @@ function renderDivCompare() {
   }
   const planM = pfMonthly(rows).net;                        // 月別 予定（税引後・円）
   const b = (typeof getBudget === 'function') ? getBudget() : {};
-  const divRow = budgetRowArr(b, 'dividend');
-  const monthHasData = (m) => [...BUDGET_INCOME_ROWS, ...BUDGET_ALL_EXP].some(r => +budgetRowArr(b, r.key)[m] > 0);
   const man = v => (v/10000).toFixed(1);
   const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+
+  // 配当実績のある年（複数年）を集計。表示年を切り替えられるようにする
+  const allYears = (typeof budgetYears === 'function') ? budgetYears(b) : [];
+  const divYears = allYears.filter(y => budgetRowArr(b, 'dividend', y).some(v => +v > 0));
+  const thisYear = new Date().getFullYear();
+  if (divCompareYear == null || !divYears.includes(divCompareYear)) {
+    divCompareYear = divYears.includes(thisYear) ? thisYear : (divYears.length ? divYears[divYears.length-1] : (activeBudgetYear || thisYear));
+  }
+  const yr = divCompareYear;
+  const yearActual = (y) => budgetRowArr(b, 'dividend', y).reduce((s,v)=>s+(+v||0),0);   // その年の実績合計（万）
+
+  const divRow = budgetRowArr(b, 'dividend', yr);
+  const monthHasData = (m) => [...BUDGET_INCOME_ROWS, ...BUDGET_ALL_EXP].some(r => +budgetRowArr(b, r.key, yr)[m] > 0);
   let cPlan='', cAct='', cDiff='', actTotal=0, planForMonths=0, nMonths=0;
   for (let m = 0; m < 12; m++) {
     const p = planM[m];
@@ -3143,17 +3155,38 @@ function renderDivCompare() {
     cDiff += d==null ? '<td class="bg-mtotal">–</td>' : `<td class="bg-mtotal" style="color:${d<0?'var(--rose)':'var(--green)'};">${d>=0?'+':''}${man(d)}</td>`;
   }
   const rate = planForMonths>0 ? actTotal/planForMonths*100 : null;
-  if (typeof setKpi === 'function') setKpi({ div: { act: actTotal, plan: planAnnualNet, planSoFar: planForMonths } });
+  // KPIは常に今年の実績で（表示年を変えても崩れないように）
+  if (typeof setKpi === 'function') {
+    const curAct = budgetRowArr(b, 'dividend', thisYear).reduce((s,v)=>s+(+v||0),0) * 10000;
+    setKpi({ div: { act: curAct, plan: planAnnualNet, planSoFar: planForMonths } });
+  }
   const stat = (label,val,color)=>`<div style="background:var(--bg-subtle);border-radius:6px;padding:8px 10px;"><div style="font-size:11.5px;color:var(--ink-mute);font-weight:700;">${label}</div><div style="font-size:17px;font-weight:800;font-family:'JetBrains Mono',monospace;${color?`color:${color};`:''}">${val}</div></div>`;
+
+  // 年切替タブ（複数年の実績があるときのみ）
+  const yearTabs = divYears.length > 1
+    ? `<div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:var(--ink-soft);font-weight:700;">表示する年：</span>
+        ${divYears.map(y => `<button type="button" class="divcmp-ytab" data-y="${y}" style="font-size:12.5px;padding:3px 12px;border:1px solid ${y===yr?'var(--teal-deep)':'var(--border)'};border-radius:6px;background:${y===yr?'var(--teal-deep)':'var(--bg-card)'};color:${y===yr?'#fff':'var(--ink-soft)'};cursor:pointer;font-family:inherit;font-weight:${y===yr?'700':'400'};">${y}年</button>`).join('')}
+      </div>` : '';
+  // 年別実績サマリー（過去の年をまとめて俯瞰）
+  const yearSummary = divYears.length > 1
+    ? `<div style="margin-top:10px;padding:9px 12px;background:var(--bg-subtle);border-radius:6px;">
+        <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:5px;">📊 年別 配当実績（税引後・万）</div>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;">
+          ${divYears.map(y => `<div style="font-size:12.5px;"><span style="color:var(--ink-mute);">${y}年</span> <b style="font-family:'JetBrains Mono',monospace;color:${y===yr?'var(--teal-deep)':'var(--ink)'};">${man(yearActual(y)*10000)}万</b></div>`).join('')}
+        </div>
+      </div>` : '';
+
   host.innerHTML = `
+    ${yearTabs}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin-bottom:10px;">
-      ${stat('予定（年間・税引後）', man(planAnnualNet)+'万')}
-      ${stat('実績（'+nMonths+'ヶ月累計）', man(actTotal)+'万','var(--teal-deep)')}
+      ${stat(yr+'年 予定（年間・税引後）', man(planAnnualNet)+'万')}
+      ${stat(yr+'年 実績（'+nMonths+'ヶ月）', man(actTotal)+'万','var(--teal-deep)')}
       ${rate!=null?stat('達成率（取込済み月）', rate.toFixed(0)+'%', rate>=95?'var(--green)':rate>=80?'var(--amber)':'var(--rose)'):''}
     </div>
     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border);border-radius:6px;">
       <table class="bg-table" style="min-width:760px;">
-        <thead><tr><th class="bg-rowlabel">　</th>${months.map(m=>`<th>${m}</th>`).join('')}<th>累計</th></tr></thead>
+        <thead><tr><th class="bg-rowlabel">${yr}年</th>${months.map(m=>`<th>${m}</th>`).join('')}<th>累計</th></tr></thead>
         <tbody>
           <tr><td class="bg-rowlabel">予定（税引後・万）</td>${cPlan}<td class="bg-avg">${man(planAnnualNet)}</td></tr>
           <tr><td class="bg-rowlabel">実績入金（万）</td>${cAct}<td class="bg-avg">${man(actTotal)}</td></tr>
@@ -3161,7 +3194,11 @@ function renderDivCompare() {
         </tbody>
       </table>
     </div>
-    <div style="font-size:12px;margin-top:6px;color:var(--ink-mute);">予定＝ポートフォリオの予想配当（税引後）を支払月で配分。「未」＝その月の収支シートが未入力（MF CSV取込で実績が入ります）。達成率は取込済み月の予定合計に対する実績。</div>`;
+    ${yearSummary}
+    <div style="font-size:12px;margin-top:6px;color:var(--ink-mute);">予定＝ポートフォリオの予想配当（税引後）を支払月で配分（全年とも現在のポートフォリオ基準）。「未」＝その月の収支シートが未入力。達成率は取込済み月の予定合計に対する実績。</div>`;
+  host.querySelectorAll('.divcmp-ytab').forEach(btn => btn.addEventListener('click', () => {
+    divCompareYear = +btn.dataset.y; renderDivCompare();
+  }));
   if (typeof renderDivPerStock === 'function') renderDivPerStock();
 }
 
