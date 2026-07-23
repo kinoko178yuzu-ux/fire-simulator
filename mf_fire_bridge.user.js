@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         MF → FIREシミュレーター CSVブリッジ
 // @namespace    fire-simulator-bridge
-// @version      1.2
+// @version      1.3
+// @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/mf_fire_bridge.user.js
+// @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/mf_fire_bridge.user.js
 // @description  マネーフォワードの家計簿CSVを月ごとに自動取得し、FIREシミュレーターの年間収支シートへ自動反映する
 // @match        https://moneyforward.com/cf*
 // @match        https://kinoko178yuzu-ux.github.io/fire-simulator/*

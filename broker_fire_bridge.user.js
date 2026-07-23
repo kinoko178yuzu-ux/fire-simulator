@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      1.4
+// @version      1.5
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
+// @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
+// @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @match        https://site.sbisec.co.jp/*
 // @match        https://site2.sbisec.co.jp/*
 // @match        https://member.rakuten-sec.co.jp/*

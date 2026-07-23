@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         マネフォ資産 → FIREシミュレーター 資産ブリッジ
 // @namespace    fire-simulator-bridge
-// @version      1.0
+// @version      1.1
 // @description  マネーフォワードの資産内訳（預金・株式・投信）を読み取り、FIREシミュレーターへ自動反映する
+// @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/mf_asset_bridge.user.js
+// @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/mf_asset_bridge.user.js
 // @match        https://moneyforward.com/*
 // @match        http://localhost:7799/*
 // @match        https://kinoko178yuzu-ux.github.io/fire-simulator/*
