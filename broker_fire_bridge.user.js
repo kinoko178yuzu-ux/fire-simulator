@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      1.7
+// @version      1.8
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
@@ -138,6 +138,23 @@
       .find(el => /CSV/i.test(el.textContent || el.value || el.getAttribute('aria-label') || ''));
   }
 
+  /** Reactサイト向け：本物のマウス操作に近いイベント列でクリック */
+  function fullClick(el) {
+    try {
+      ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(t =>
+        el.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, view: window })));
+    } catch { try { el.click(); } catch {} }
+  }
+
+  /** クリック後にページが行った通信URL（診断用・直近6件のパス） */
+  function netDiag(W, t0) {
+    try {
+      const ents = W.performance.getEntriesByType('resource').filter(e => e.startTime > t0).slice(-6)
+        .map(e => String(e.name).replace(/^https?:\/\/[^\/]+/, '').slice(0, 60));
+      return ents.length ? ents.join(' , ') : 'クリック後の通信なし（ボタンの処理が発火していない可能性）';
+    } catch { return 'net計測不可'; }
+  }
+
   async function downloadCsv(downloadPromise) {
     let buf = null;
     const btn = findCsvBtn();
@@ -152,11 +169,42 @@
     }
 
     if (!buf) {
-      btn.click();
+      const W = (typeof unsafeWindow !== 'undefined' && unsafeWindow) ? unsafeWindow : window;
+      const t0 = (W.performance && W.performance.now) ? W.performance.now() : 0;
+      fullClick(btn);
+
+      // 追加の網：クリック後に発生したCSVらしき通信URLを見つけて、直接取りに行く
+      const resourceHunt = (async () => {
+        const tried = new Set();
+        for (let i = 0; i < 36; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          try {
+            const cands = W.performance.getEntriesByType('resource')
+              .filter(e => e.startTime > t0)
+              .map(e => String(e.name))
+              .filter(u => /csv|download|export|attach/i.test(u) && !tried.has(u));
+            for (const u of cands) {
+              tried.add(u);
+              try {
+                const r = await fetch(u, { credentials: 'include' });
+                if (r.ok) {
+                  const b = await r.arrayBuffer();
+                  if (b.byteLength > 100 && new Uint8Array(b)[0] !== 0x3C) return b;
+                }
+              } catch {}
+            }
+          } catch {}
+        }
+        return null;
+      })();
+
       buf = await Promise.race([
         downloadPromise,
+        resourceHunt.then(b => b ? b : new Promise(() => {})),   // 見つからなければタイムアウト側に任せる
         new Promise((_, rej) => setTimeout(() =>
-          rej(new Error('ダウンロードがタイムアウトしました(v1.7)。診断: ' + csvBtnDiag() + ' ／ CSVがダウンロードフォルダに保存されていれば、アプリの📁ファイル選択で取込できます')), 20000))
+          rej(new Error('ダウンロードがタイムアウトしました(v1.8)。ボタン: ' + csvBtnDiag() +
+            ' ／ 通信: ' + netDiag(W, t0) +
+            ' ／ CSVがダウンロードフォルダに保存されていれば📁ファイル選択で取込できます')), 20000))
       ]);
     }
     return buf;
