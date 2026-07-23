@@ -2067,6 +2067,7 @@ select:focus { border-color: var(--teal); }
         <input type="hidden" id="divActualJson" value='{"txns":[]}'>
         <input type="hidden" id="dataMetaJson" value="{}">
         <input type="hidden" id="accountHistoryJson" value="{}">
+        <input type="hidden" id="divPlanHistoryJson" value="{}">
         <div id="divCompare"></div>
         <details style="margin-top:10px;" id="divPerStockDetails">
           <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">▶ 銘柄別 予定 vs 実績</summary>
@@ -3114,7 +3115,7 @@ function renderDivCompare() {
   const host = document.getElementById('divCompare');
   if (!host) return;
   const rows = (typeof pfRows==='function') ? pfRows() : [];
-  const planAnnualNet = rows.reduce((s,r)=>s+r.net,0);     // 予想配当 年間（税引後・円）
+  let planAnnualNet = rows.reduce((s,r)=>s+r.net,0);       // 予想配当 年間（税引後・円）
   if (!planAnnualNet) {
     host.innerHTML = '<div style="font-size:12.5px;color:var(--ink-mute);">上の「高配当株 管理」にポートフォリオを取り込むと、予想配当（予定）と実績の比較が表示されます。</div>';
     // 予定が無くても、収支シートの配当実績（今年分）だけはKPIバーに出す
@@ -3125,20 +3126,37 @@ function renderDivCompare() {
     }
     return;
   }
-  const planM = pfMonthly(rows).net;                        // 月別 予定（税引後・円）
+  const liveMonthly = pfMonthly(rows).net;                  // 月別 予定（現PF・税引後・円）
   const b = (typeof getBudget === 'function') ? getBudget() : {};
   const man = v => (v/10000).toFixed(1);
   const months = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  const thisYear = new Date().getFullYear();
+
+  // ★NEW 今年の予定をスナップショットとして保存（翌年以降は凍結して過去の予定を再現）
+  let planHist = {}; try { planHist = JSON.parse((document.getElementById('divPlanHistoryJson')||{}).value || '{}'); } catch {}
+  if (planAnnualNet > 0) {
+    const snap = { annual: Math.round(planAnnualNet), monthly: liveMonthly.map(v=>Math.round(v)) };
+    const cur = planHist[thisYear];
+    if (!cur || cur.annual !== snap.annual || JSON.stringify(cur.monthly) !== JSON.stringify(snap.monthly)) {
+      planHist[thisYear] = snap;
+      const el = document.getElementById('divPlanHistoryJson');
+      if (el) { el.value = JSON.stringify(planHist); if (typeof debouncedSave === 'function' && !isApplyingCloud) debouncedSave(); }
+    }
+  }
 
   // 配当実績のある年（複数年）を集計。表示年を切り替えられるようにする
   const allYears = (typeof budgetYears === 'function') ? budgetYears(b) : [];
   const divYears = allYears.filter(y => budgetRowArr(b, 'dividend', y).some(v => +v > 0));
-  const thisYear = new Date().getFullYear();
   if (divCompareYear == null || !divYears.includes(divCompareYear)) {
     divCompareYear = divYears.includes(thisYear) ? thisYear : (divYears.length ? divYears[divYears.length-1] : (activeBudgetYear || thisYear));
   }
   const yr = divCompareYear;
   const yearActual = (y) => budgetRowArr(b, 'dividend', y).reduce((s,v)=>s+(+v||0),0);   // その年の実績合計（万）
+
+  // 表示年の「予定」：今年は現PFライブ、過去年は当時のスナップショット（無ければ現PFで代用）
+  const usingSnapshot = (yr < thisYear && planHist[yr]);
+  const planM = usingSnapshot ? planHist[yr].monthly : liveMonthly;
+  planAnnualNet = usingSnapshot ? planHist[yr].annual : planAnnualNet;
 
   const divRow = budgetRowArr(b, 'dividend', yr);
   const monthHasData = (m) => [...BUDGET_INCOME_ROWS, ...BUDGET_ALL_EXP].some(r => +budgetRowArr(b, r.key, yr)[m] > 0);
@@ -3195,7 +3213,13 @@ function renderDivCompare() {
       </table>
     </div>
     ${yearSummary}
-    <div style="font-size:12px;margin-top:6px;color:var(--ink-mute);">予定＝ポートフォリオの予想配当（税引後）を支払月で配分（全年とも現在のポートフォリオ基準）。「未」＝その月の収支シートが未入力。達成率は取込済み月の予定合計に対する実績。</div>`;
+    <div style="font-size:12px;margin-top:6px;color:var(--ink-mute);">${
+      usingSnapshot
+        ? `予定＝<b>${yr}年当時に記録した予想配当</b>（その年のポートフォリオ基準）。`
+        : (yr < thisYear
+            ? `予定＝<span style="color:var(--amber);">当時の記録が無いため現在のポートフォリオ基準</span>（${yr}年当時の予定は未保存）。今年以降は毎年その年の予定が自動保存されます。`
+            : `予定＝今年のポートフォリオの予想配当（税引後）を支払月で配分。今年の予定は自動で記録され、来年からは${thisYear}年の予定として凍結表示されます。`)
+    }「未」＝その月の収支シートが未入力。達成率は取込済み月の予定合計に対する実績。</div>`;
   host.querySelectorAll('.divcmp-ytab').forEach(btn => btn.addEventListener('click', () => {
     divCompareYear = +btn.dataset.y; renderDivCompare();
   }));
@@ -4236,7 +4260,7 @@ const INPUT_IDS = [
   'kokuhoMedicalRate','kokuhoSupportRate','kokuhoKaigoRate','kokuhoEqual','kokuhoKaigoEqual','kokuhoFlat',
   'kaigoInsMonthly','koukiRate','koukiFlat',
   'pensionMonthly','nenkinExempt','spouseDeduction',
-  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly','coastRate','hdDivDisplay','hdSectorBasis','pensionMode','dataMetaJson','accountHistoryJson','guardrailJson',
+  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly','coastRate','hdDivDisplay','hdSectorBasis','pensionMode','dataMetaJson','accountHistoryJson','guardrailJson','divPlanHistoryJson',
   'pensionStartAge','taishokin','idecoCurrent','idecoMonthly',
   'targetFailRate','trials','bucket1Years','bucket2Years','bucket2Rate',
   'emergencyFund','cashYearsTarget','cashReturn'
