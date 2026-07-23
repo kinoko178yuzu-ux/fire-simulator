@@ -2114,6 +2114,17 @@ select:focus { border-color: var(--teal); }
         <div id="coastResult"></div>
       </div>
 
+      <!-- ★NEW 取り崩しガードレール（今年使ってよい額） -->
+      <div class="card mode-sim" id="guardrailCard">
+        <h3><span class="dot"></span>💰 今年使ってよい額（取り崩しガードレール）</h3>
+        <div style="font-size:13px;color:var(--ink-soft);background:var(--bg-subtle);border-left:3px solid var(--teal);padding:7px 12px;margin-bottom:10px;line-height:1.6;">
+          破綻確率を金額に翻訳します。<strong>資産×取り崩し率（3.5%）を基本に、前年から±10%のガードレール</strong>で急な増減を抑え、生活を安定させる方式です。
+          <span style="font-size:12px;color:var(--ink-mute);">相場が良くても前年+10%まで／悪くても前年−10%までしか変えない＝使いすぎと我慢しすぎの両方を防ぐ「手すり」。</span>
+        </div>
+        <input type="hidden" id="guardrailJson" value="{}">
+        <div id="guardrailResult"></div>
+      </div>
+
       <div class="summary-grid mode-plan">
         <div class="summary-card">
           <div class="label">FIRE時の予測資産</div>
@@ -4188,7 +4199,7 @@ const INPUT_IDS = [
   'kokuhoMedicalRate','kokuhoSupportRate','kokuhoKaigoRate','kokuhoEqual','kokuhoKaigoEqual','kokuhoFlat',
   'kaigoInsMonthly','koukiRate','koukiFlat',
   'pensionMonthly','nenkinExempt','spouseDeduction',
-  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly','coastRate','hdDivDisplay','hdSectorBasis','pensionMode','dataMetaJson','accountHistoryJson',
+  'lifeExpectancy','kouseiStartAge','kouseiYears','kouseiAvgMonthly','coastRate','hdDivDisplay','hdSectorBasis','pensionMode','dataMetaJson','accountHistoryJson','guardrailJson',
   'pensionStartAge','taishokin','idecoCurrent','idecoMonthly',
   'targetFailRate','trials','bucket1Years','bucket2Years','bucket2Rate',
   'emergencyFund','cashYearsTarget','cashReturn'
@@ -4512,6 +4523,65 @@ function renderCoastFire(params, fireYear) {
   if (typeof setKpi === 'function') setKpi({ coast: gradN == null ? null : cur + gradN, coastNow: gradN === 0 || gap === 0, coastKnown: true });
 }
 
+/** ============================
+ *  💰 取り崩しガードレール（今年使ってよい額）
+ *  基本額=資産×取り崩し率(3.5%) を、前年の取り崩し額±10%でクリップして急変を抑える。
+ *  年ごとの取り崩し額は guardrailJson に記録し、翌年のガードレール基準になる。
+ *  ============================ */
+function renderGuardrail(params, fireYear) {
+  const host = document.getElementById('guardrailResult'); if (!host) return;
+  const rate = +((document.getElementById('coastRate')||{}).value) || 0.035;
+  const yr = new Date().getFullYear();
+
+  // 取り崩さなくても入る収入（年金は受給年齢前なら0・副収入はFIRE後の手取り）
+  const pensionAge = params.pensionStartAge || 65;
+  let pensionAnnual = 0;
+  if (params.startAgeOriginal >= pensionAge) {
+    const pMul = pensionMultiplier(pensionAge);
+    const kokuminReceive = nenkinReceiveRate(params.taxParams ? params.taxParams.nenkinExempt : 'none');
+    pensionAnnual = calcKouseiPensionAnnual(params.kouseiYearsCurrent, params.kouseiAvgMonthly) * pMul
+      + 816000 * kokuminReceive * pMul + (params.pensionSolo ? 0 : 816000 * pMul);
+  }
+  const sideNet = params.sideIncomeNet || 0;
+
+  // 基本額と前年±10%ガードレール
+  const base = params.currentAssets * rate;
+  let g = {}; try { g = JSON.parse((document.getElementById('guardrailJson')||{}).value || '{}'); } catch {}
+  const prev = +g[yr - 1] || 0;
+  let withdraw = base, clipped = null;
+  if (prev > 0) {
+    const hi = prev * 1.10, lo = prev * 0.90;
+    if (base > hi) { withdraw = hi; clipped = 'upper'; }
+    else if (base < lo) { withdraw = lo; clipped = 'lower'; }
+  }
+  // 今年の額を記録（来年のガードレール基準）
+  if (Math.round(+g[yr] || 0) !== Math.round(withdraw)) {
+    g[yr] = Math.round(withdraw);
+    const el = document.getElementById('guardrailJson');
+    if (el) { el.value = JSON.stringify(g); if (typeof debouncedSave === 'function' && !isApplyingCloud) debouncedSave(); }
+  }
+
+  const total = withdraw + pensionAnnual + sideNet;
+  const man = v => (v/10000).toLocaleString('ja-JP', {maximumFractionDigits:0});
+  const isWorking = fireYear > 0;
+  const projAssets = window._projAssetsAtFire || 0;
+  const fireAge = params.startAgeOriginal + Math.max(fireYear, 0);
+  const prevLine = prev > 0
+    ? `<div style="font-size:12.5px;margin-top:4px;color:${clipped?'var(--amber)':'var(--ink-soft)'};">前年（${yr-1}年）${man(prev)}万 → 今年 ${man(withdraw)}万（${withdraw>=prev?'+':''}${((withdraw/prev-1)*100).toFixed(1)}%${clipped==='upper'?'・上限+10%でクリップ':clipped==='lower'?'・下限−10%でクリップ':''}）</div>`
+    : `<div style="font-size:12px;color:var(--ink-mute);margin-top:4px;">※初年度はガードレールなし。今年の額を記録したので、来年から「前年±10%」が働きます。</div>`;
+  const projLine = (isWorking && projAssets > 0)
+    ? `<div style="font-size:12.5px;color:var(--ink-mute);margin-top:6px;">参考：FIRE予定（${fireAge}歳）時点の予測資産 ${man(projAssets)}万円なら、初年度 約<b>${man(projAssets*rate + sideNet)}万円/年</b>（月${man((projAssets*rate+sideNet)/12)}万）</div>` : '';
+
+  host.innerHTML = `
+    <div><span style="font-size:12.5px;color:var(--ink-mute);font-weight:700;">${isWorking?'もし今FIREしたら、':''}今年使ってよい額</span><br>
+      <span style="font-size:30px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--teal-deep);">${man(total)}万円</span>
+      <span style="font-size:14px;color:var(--ink-soft);">／年（月 ${man(total/12)}万）</span></div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-top:6px;">内訳：資産取り崩し <b>${man(withdraw)}万</b>（資産${man(params.currentAssets)}万 × ${(rate*100).toFixed(1)}%${clipped?'をガードレール調整':''}）＋ 年金 <b>${man(pensionAnnual)}万</b> ＋ 副収入 <b>${man(sideNet)}万</b></div>
+    ${prevLine}
+    ${projLine}
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:8px;">取り崩し率は「🎓積立卒業」カードの設定（現在 ${(rate*100).toFixed(1)}%）と連動。破綻確率シミュレーションと併せて判断してください。</div>`;
+}
+
 document.addEventListener('DOMContentLoaded', () => { renderSpotEvents(); renderRecurring(); renderBucketList(); });
 
 /** ====================================
@@ -4578,7 +4648,7 @@ const CARD_STATE_KEY = 'sfs_cardState';
 /* 初期状態: 1=開く（毎日見るもの）/ 0=閉じる（設定・詳細分析）。キーはid または タイトル部分一致 */
 const CARD_DEFAULTS = {
   lifePlanCard:1, bucketCard:1, budgetCard:1, highDivCard:1, dividendCard:1,
-  coastCard:1, threeScenarioCard:1, assetTimelineCard:1,
+  coastCard:1, threeScenarioCard:1, assetTimelineCard:1, guardrailCard:1,
   '総資産推移':1, '資産推移シミュレーション':1,
   recurringCard:0, 'FIRE後の月額固定費':0, '年齢別 年間収支':0, 'ストレステスト':0,
   '退職年齢別':0, 'FIRE直後の税金':0, '退職直後の医療保険':0, 'FIRE時の資産配分':0,
@@ -6040,6 +6110,7 @@ function calculate() {
 
   /** FIRE達成時の資産予測（★FIX simulate本体から取得＝年表・モンテカルロと完全一致） */
   const projAssets = fireYear >= 0 ? buildFireParams(params, fireYear).startAssets : 0;
+  window._projAssetsAtFire = projAssets;   // 取り崩しガードレールの参考表示用
   document.getElementById('targetAssets').textContent = fireYear >= 0 ? `${(projAssets/10000).toFixed(0)}万` : '--';
 
   /** FIRE直後の税金内訳 */
@@ -6218,6 +6289,7 @@ function calculate() {
   if (typeof renderRecurring === 'function') renderRecurring();
   if (typeof renderBucketList === 'function') renderBucketList();
   if (typeof renderCoastFire === 'function') renderCoastFire(params, fireYear);
+  if (typeof renderGuardrail === 'function') renderGuardrail(params, fireYear);
   if (typeof renderAssetTimeline === 'function') renderAssetTimeline();
   if (typeof renderFreshness === 'function') renderFreshness();
 }

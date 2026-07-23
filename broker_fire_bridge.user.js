@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      1.5
+// @version      1.6
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
@@ -43,19 +43,72 @@
     return el;
   }
 
-  // ── 証券会社側共通：blob URLダウンロードを横取り ──────────────────
+  // ── 証券会社側共通：CSVダウンロードを多方式で横取り ──────────────────
+  //   ① blob URL（URL.createObjectURL）
+  //   ② XMLHttpRequest のCSVレスポンス
+  //   ③ fetch のCSVレスポンス
   function interceptDownload() {
     let resolve;
     const promise = new Promise(res => { resolve = res; });
+    const looksCsvText = (s) => /受渡日|入金日|約定日|銘柄コード|受取/.test(String(s).slice(0, 300));
+
+    // ① blob
     const orig = URL.createObjectURL.bind(URL);
     URL.createObjectURL = function (blob) {
       blob.arrayBuffer().then(buf => {
-        // HTMLでなく、かつ100バイト超ならCSVとみなす
         if (new Uint8Array(buf)[0] !== 0x3C && buf.byteLength > 100) resolve(buf);
       }).catch(() => {});
       return orig(blob);
     };
+
+    // ② XHR
+    try {
+      const XO = XMLHttpRequest.prototype.open, XS = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function (m, u) { this._fireUrl = String(u || ''); return XO.apply(this, arguments); };
+      XMLHttpRequest.prototype.send = function () {
+        this.addEventListener('load', () => {
+          try {
+            const ct = (this.getResponseHeader('content-type') || '') + ';' + (this.getResponseHeader('content-disposition') || '');
+            const hit = /csv|attachment|octet-stream/i.test(ct) || /csv|download/i.test(this._fireUrl || '');
+            if (!hit) return;
+            const r = this.response;
+            if (r instanceof ArrayBuffer && r.byteLength > 100) resolve(r);
+            else if (r instanceof Blob) r.arrayBuffer().then(b => { if (b.byteLength > 100) resolve(b); });
+            else if (typeof r === 'string' && looksCsvText(r)) resolve(new TextEncoder().encode(r).buffer);
+          } catch {}
+        });
+        return XS.apply(this, arguments);
+      };
+    } catch {}
+
+    // ③ fetch
+    try {
+      const OF = window.fetch;
+      window.fetch = async function (...a) {
+        const res = await OF.apply(this, a);
+        try {
+          const url = String((a[0] && a[0].url) || a[0] || '');
+          const ct = (res.headers.get('content-type') || '') + ';' + (res.headers.get('content-disposition') || '');
+          if (/csv|attachment|octet-stream/i.test(ct) || /csv|download/i.test(url)) {
+            res.clone().arrayBuffer().then(buf => {
+              if (buf.byteLength > 100 && new Uint8Array(buf)[0] !== 0x3C) resolve(buf);
+            }).catch(() => {});
+          }
+        } catch {}
+        return res;
+      };
+    } catch {}
+
     return promise;
+  }
+
+  /** 失敗時の診断情報：ページ上のCSVらしき要素の正体を返す */
+  function csvBtnDiag() {
+    const cands = [...document.querySelectorAll('a, button, input, span')]
+      .filter(el => /CSV/i.test(el.textContent || el.value || ''))
+      .slice(0, 3)
+      .map(el => `${el.tagName}${el.href ? '(href=' + String(el.href).slice(0, 70) + ')' : ''}${el.className ? '.' + String(el.className).slice(0, 40) : ''}`);
+    return cands.length ? cands.join(' ｜ ') : 'CSV要素なし';
   }
 
   async function waitFor(fn, ms) {
@@ -89,7 +142,8 @@
       btn.click();
       buf = await Promise.race([
         downloadPromise,
-        new Promise((_, rej) => setTimeout(() => rej(new Error('ダウンロードがタイムアウトしました')), 12000))
+        new Promise((_, rej) => setTimeout(() =>
+          rej(new Error('ダウンロードがタイムアウトしました。診断: ' + csvBtnDiag())), 20000))
       ]);
     }
     return buf;
