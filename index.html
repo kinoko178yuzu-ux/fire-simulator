@@ -1901,7 +1901,8 @@ select:focus { border-color: var(--teal); }
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
           <button type="button" id="btnMfAssetFetch" onclick="mfAssetFetch()" style="font-size:13px;padding:6px 16px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📥 マネフォから資産を取得</button>
-          <span id="mfAssetStatus" style="font-size:12.5px;min-height:18px;"></span>
+          <span class="pf-freshness" style="font-size:12px;color:var(--ink-mute);"></span>
+          <span id="mfAssetStatus" class="mf-asset-status" style="font-size:12.5px;min-height:18px;"></span>
         </div>
         <div id="assetTimelinePanel"><div style="font-size:12.5px;color:var(--ink-mute);">まだ記録がありません。上のボタンで初回取得すると、口座×月の推移表とグラフが表示されます。</div></div>
       </div>
@@ -1990,12 +1991,18 @@ select:focus { border-color: var(--teal); }
         <!-- STEP1: 保有銘柄 -->
         <details style="margin-bottom:10px;" id="hdImportDetails">
           <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📥 STEP1：保有銘柄を取り込む・更新する<span id="pfFreshness" style="font-weight:400;color:var(--ink-mute);font-size:11.5px;margin-left:10px;"></span></summary>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">🅐 マネーフォワードの表をコピーして貼り付け（初回も更新もこれだけ） <span style="font-weight:400;color:var(--ink-mute);">→ 保有数・株価を登録。新しい銘柄は内蔵マスタ（75銘柄）で業種・配当単価も自動補完</span></div>
+          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">🅐 ワンクリックでマネフォから最新の株価・保有数を取得 <span style="font-weight:400;color:var(--ink-mute);">→ いちばん簡単。資産推移の月次記録も同時に行います</span></div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <button type="button" onclick="mfAssetFetch()" style="font-size:13px;padding:6px 16px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📥 マネフォから株価・保有数を取得</button>
+            <span class="pf-freshness" style="font-size:12px;color:var(--ink-mute);"></span>
+            <span class="mf-asset-status" style="font-size:12.5px;min-height:18px;"></span>
+          </div>
+          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">🅑 （手動）マネーフォワードの表をコピーして貼り付け <span style="font-weight:400;color:var(--ink-mute);">→ 上のボタンが使えない時に。新しい銘柄は内蔵マスタ（75銘柄）で業種・配当単価も自動補完</span></div>
           <div style="font-size:12px;color:var(--ink-mute);margin-bottom:6px;">マネフォ側の操作：<b>資産 → ポートフォリオ → 「株式（現物）」の表</b>を、マウスで表全体をなぞって選択 → コピー（Cmd+C）→ 下の欄に貼り付け（Cmd+V）→ ボタンを押す。複数口座分まとめてOK。</div>
           <textarea id="hdPasteArea" rows="4" placeholder="ここにマネフォの表を貼り付け（例：1343	NFJ-REIT	215	1,886	1,914	411,510円 …）" style="width:100%;font-size:12.5px;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:var(--bg-subtle);padding:8px;box-sizing:border-box;"></textarea>
           <button type="button" id="hdPasteBtn" style="width:100%;margin-top:6px;padding:8px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">貼付データで保有数・株価を更新</button>
           <div id="hdImportResult" style="font-size:12.5px;margin-top:6px;"></div>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin:12px 0 4px;font-weight:700;">🅑 （代替）Googleシート「管理シート」のCSVを取込 <span style="font-weight:400;color:var(--ink-mute);">→ シートで管理してきた業種・配当単価ごと一括移行できます</span></div>
+          <div style="font-size:12.5px;color:var(--ink-soft);margin:12px 0 4px;font-weight:700;">🅒 （初回のみ）Googleシート「管理シート」のCSVを取込 <span style="font-weight:400;color:var(--ink-mute);">→ シートで管理してきた業種・配当単価ごと一括移行できます</span></div>
           <input type="file" id="hdCsvInput" accept=".csv,text/csv" style="font-size:12.5px;margin-bottom:4px;">
           <div style="font-size:12px;color:var(--ink-mute);">Googleシート側の操作：ファイル → ダウンロード → カンマ区切り（.csv）</div>
         </details>
@@ -3606,7 +3613,7 @@ function getAccountHistory(){ try{ const o=JSON.parse(document.getElementById('a
 function setAccountHistory(h){ document.getElementById('accountHistoryJson').value=JSON.stringify(h); if(typeof debouncedSave==='function'&&!isApplyingCloud) debouncedSave(); if(typeof renderAssetTimeline==='function') renderAssetTimeline(); }
 
 async function mfAssetFetch(){
-  const st=document.getElementById('mfAssetStatus');
+  const st={ set innerHTML(h){ document.querySelectorAll('.mf-asset-status').forEach(e=>e.innerHTML=h); } };  // 資産推移カードとSTEP1の両方に表示
   // ブリッジ検出（document-idle注入の遅れに余裕を持たせ2回試行）
   const ping=()=>new Promise(res=>{ const f=()=>{document.removeEventListener('mf-asset-ready',f);res(true);};
     document.addEventListener('mf-asset-ready',f);
@@ -3623,8 +3630,8 @@ async function mfAssetFetch(){
 document.addEventListener('mf-asset-result',(e)=>mfAssetApply(e.detail));
 
 function mfAssetApply(d){
-  const st=document.getElementById('mfAssetStatus');
-  if(!d || d.error){ if(st) st.innerHTML=`<span style="color:var(--rose);">❌ ${d?d.error:'取得に失敗しました'}</span>`; return; }
+  const st={ set innerHTML(h){ document.querySelectorAll('.mf-asset-status').forEach(e=>e.innerHTML=h); } };
+  if(!d || d.error){ st.innerHTML=`<span style="color:var(--rose);">❌ ${d?d.error:'取得に失敗しました'}</span>`; return; }
   const stocks=d.stocks||[], funds=d.funds||[], cash=d.cash||[];
   const byBank={};
   cash.forEach(r=>{ if(r.bank) byBank[r.bank]=(byBank[r.bank]||0)+(+r.yen||0); });
@@ -3794,6 +3801,9 @@ function renderFreshness(){
   const m=getDataMeta();
   const b=document.getElementById('brokerFreshness');
   if(b) b.textContent = m.broker? `（最終取込 ${m.broker}）` : '（未取込）';
+  document.querySelectorAll('.pf-freshness').forEach(p=>{
+    p.textContent = m.portfolio? `株価・保有数の最終更新：${m.portfolio}` : '株価・保有数：まだ更新していません';
+  });
   const p=document.getElementById('pfFreshness');
   if(p) p.textContent = m.portfolio? `（株価・保有数は ${m.portfolio} 取込時点）` : '（未取込）';
 }
