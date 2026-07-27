@@ -4830,6 +4830,11 @@ function _dataRichness(obj) {
   try { s += Object.keys(JSON.parse(obj.divPortfolioJson || '{}')).length; } catch {}
   try { s += (JSON.parse(obj.divActualJson || '{"txns":[]}').txns || []).length; } catch {}
   try { s += Object.keys(JSON.parse(obj.accountHistoryJson || '{}')).length * 3; } catch {}
+  // やりたいことリストの入力（費用・期限・達成・親年齢）も“作り込んだデータ”として保護
+  try { const bk = JSON.parse(obj.bucketListJson || 'null');
+    if (bk && bk.items) { s += bk.items.filter(i => +i.cost>0 || i.deadline!=null || i.done).length * 2; if (bk.parentAge) s += 2; } } catch {}
+  // 特別費（ライフイベント）・取り崩し記録なども保護
+  try { s += (JSON.parse(obj.spotEventsJson || '[]') || []).length; } catch {}
   return s;
 }
 /** これから保存する内容が、既存の蓄積データを空で上書きしてしまうか（多重タブ事故防止） */
@@ -4837,7 +4842,12 @@ function _wouldClobber(newData) {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) return false;
   let stored; try { stored = JSON.parse(raw); } catch { return false; }
-  return _dataRichness(stored) >= 5 && _dataRichness(newData) === 0;
+  // ① 蓄積データ全般を空で上書き
+  if (_dataRichness(stored) >= 5 && _dataRichness(newData) === 0) return true;
+  // ② やりたいことリストの費用が丸ごと消える保存（多重タブで費用が消えた事故の再発防止）
+  const bkCost = (o) => { try { const bk=JSON.parse(o.bucketListJson||'null'); return bk&&bk.items? bk.items.filter(i=>+i.cost>0).length : 0; } catch { return 0; } };
+  if (bkCost(stored) >= 2 && bkCost(newData) === 0) return true;
+  return false;
 }
 
 let _clobberWarned = false;
