@@ -1309,6 +1309,17 @@ select:focus { border-color: var(--teal); }
                 <div class="input-group"><input type="number" id="child2Reduce" value="3" min="0" step="0.5"><span class="unit">万/月</span></div></div>
             </div>
           </div>
+
+          <div class="subsection">
+            <div class="subsection-title">— 健康寿命後の生活費削減 ★NEW</div>
+            <p class="desc" style="font-size:12.5px;margin-bottom:10px;">健康寿命を過ぎると旅行・趣味・外食が減り、生活費が下がる想定。日本の健康寿命は男性 約72歳・女性 約75歳（0＝この削減を使わない）。</p>
+            <div class="row2">
+              <div class="field"><div class="field-row"><span class="field-label">健康寿命（この歳から削減）</span></div>
+                <div class="input-group"><input type="number" id="healthAge" value="75" min="0" max="110"><span class="unit">歳</span></div></div>
+              <div class="field"><div class="field-row"><span class="field-label">生活費の削減率</span></div>
+                <div class="input-group"><input type="number" id="healthReducePct" value="20" min="0" max="60" step="5"><span class="unit">%</span></div></div>
+            </div>
+          </div>
           <div class="subsection">
             <div class="subsection-title">— 資産・収入</div>
             <div class="field">
@@ -4261,7 +4272,7 @@ const INPUT_IDS = [
   'fireAge1','fireAge2','fireAge3','fireMainScenario','fireMode','fireTargetAge',
   'monthlyInvest','bonusInvest','returnAcc','returnRet','volatility','nisaRatio',
   'divGrowth','divYield','divNisaRatio',
-  'monthlyLifeExHouse','annualSpecial','sideIncomeGross','sideExpenseRatio','sideIncomeEndAge','inflation',
+  'monthlyLifeExHouse','annualSpecial','sideIncomeGross','sideExpenseRatio','sideIncomeEndAge','inflation','healthAge','healthReducePct',
   'budgetSheetJson','divPortfolioJson','divActualJson','assetHistoryJson',
   'loanBalance','loanRate','loanYears','loanMonthly','loanBonus',
   'taxCreditYears','taxCreditAmount','loanPayoff','payoffTiming','payoffCustomYear',
@@ -4346,7 +4357,14 @@ function renderRecurring() {
     </tr>`; };
   host.innerHTML = `<table class="bg-table" style="min-width:600px;"><thead><tr><th>項目</th><th>種別</th><th>初回(年)</th><th>周期(年)</th><th>金額(万・今の物価)</th><th>支払時見込</th><th>終了(年)</th><th></th></tr></thead><tbody>${items.map(rowH).join('') || '<tr><td colspan="8" style="color:var(--ink-mute);text-align:left;">まだありません。下の「＋追加」から登録できます（車・住宅修繕・介護など）。</td></tr>'}</tbody></table>
     <div style="font-size:12px;color:var(--ink-mute);margin-top:5px;">💡 金額は<b>今の物価</b>で入力してください。シミュレーションは支払年までインフレ率（${(infl*100).toFixed(1)}%）で自動増額します。「支払時見込」は初回支払年の実質額です。</div>
-    <button type="button" id="rcAddBtn" style="margin-top:8px;padding:6px 12px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">＋ 定期費用を追加</button>`;
+    <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button type="button" id="rcAddBtn" style="padding:6px 12px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">＋ 定期費用を追加</button>
+      <span style="font-size:12px;color:var(--ink-mute);">よく使う特別費：</span>
+      <button type="button" class="rc-preset" data-preset="oya_kaigo" style="font-size:12px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;">🙏 親の介護</button>
+      <button type="button" class="rc-preset" data-preset="jibun_kaigo" style="font-size:12px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;">🏥 自分の介護・老人ホーム</button>
+      <button type="button" class="rc-preset" data-preset="sougi" style="font-size:12px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;">⚰️ 葬儀・お墓</button>
+    </div>
+    <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">プリセットは一般的な目安額・年齢で入ります。金額・時期は後から編集できます。</div>`;
   host.querySelectorAll('tr[data-i]').forEach(tr => {
     const i = +tr.dataset.i;
     const commit = () => { const a = getLifeEvents(); if (!a[i]) return;
@@ -4366,6 +4384,38 @@ function renderRecurring() {
   if (add) add.addEventListener('click', () => { const a = getLifeEvents();
     a.push({ name:'新しい費用', category:'other', type:'expense', mode:'year', value: baseY+1, amount:50, repeat:5, end:0 });
     setLifeEvents(a); });
+  host.querySelectorAll('.rc-preset').forEach(btn => btn.addEventListener('click', () => addRecurringPreset(btn.dataset.preset)));
+}
+
+/** 介護・葬儀などのプリセットを定期費用へ追加（年齢・親年齢・寿命から時期を自動設定） */
+function addRecurringPreset(key) {
+  const baseY = (typeof BASE_YEAR!=='undefined') ? BASE_YEAR : new Date().getFullYear();
+  const curAge = +((document.getElementById('currentAge')||{}).value) || 40;
+  const lifeExp = +((document.getElementById('lifeExpectancy')||{}).value) || 95;
+  let parentAge = 0;
+  try { const bk = JSON.parse((document.getElementById('bucketListJson')||{}).value||'null'); if (bk && +bk.parentAge) parentAge = +bk.parentAge; } catch {}
+  const ev = (name, amount, startYear, repeat, endYear) =>
+    ({ name, category:'other', type:'expense', mode:'year', value: startYear, amount, repeat: repeat||0, end: endYear||0 });
+  const a = getLifeEvents();
+  let msg = '';
+  if (key === 'oya_kaigo') {
+    const start = baseY + (parentAge ? Math.max(0, 80 - parentAge) : 10);   // 親80歳頃 or 10年後
+    a.push(ev('親の介護（一時金）', 148, start, 0, 0));                       // 74万×2親
+    a.push(ev('親の介護（月額×5年）', 100, start, 1, start + 5));            // 月8.3万×12
+    msg = parentAge ? `親が80歳になる ${start}年頃を開始に設定` : `10年後(${start}年)を仮の開始に設定。バケットの親年齢を入れると自動調整されます`;
+  } else if (key === 'jibun_kaigo') {
+    const start = baseY + Math.max(0, 82 - curAge);                          // 自分82歳頃
+    const end = Math.min(start + 8, baseY + (lifeExp - curAge));
+    a.push(ev('自分の介護（入居一時金）', 200, start, 0, 0));
+    a.push(ev('自分の介護（月額）', 240, start, 1, end));                    // 月20万×12
+    msg = `自分が82歳になる ${start}年頃を開始に設定`;
+  } else if (key === 'sougi') {
+    const year = baseY + Math.max(1, lifeExp - curAge);                      // 寿命の年
+    a.push(ev('葬儀・お墓', 200, year, 0, 0));
+    msg = `寿命(${lifeExp}歳・${year}年)に設定`;
+  }
+  setLifeEvents(a);
+  if (typeof showToast === 'function') showToast('✅ 追加しました（' + msg + '）。金額・時期は表で編集できます');
 }
 
 /** 初回などイベント未設定ならデフォルトを入れる（年表からは触れないため） */
@@ -5518,6 +5568,9 @@ function readParams() {
     child2IndependAge: +inputs.child2IndependAge.value,
     child1Reduce:      +inputs.child1Reduce.value * 10000, // 年額換算は使用時に*12
     child2Reduce:      +inputs.child2Reduce.value * 10000,
+    /** ★NEW 健康寿命後の生活費削減 */
+    healthAge:         +(inputs.healthAge ? inputs.healthAge.value : 0),
+    healthReducePct:   +(inputs.healthReducePct ? inputs.healthReducePct.value : 0) / 100,
     /** ★NEW 配偶者パート収入（手取り） */
     spouseIncomeMonthly:  +inputs.spouseIncome.value * 10000,
     spouseIncomeStartAge: +inputs.spouseIncomeStartAge.value,
@@ -5676,6 +5729,9 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
     let childReduceNow = 0;
     if (cAges[0] >= (params.child1IndependAge||999)) childReduceNow += params.child1Reduce * 12 * Math.pow(1+params.inflation, y);
     if (cAges[1] >= (params.child2IndependAge||999)) childReduceNow += params.child2Reduce * 12 * Math.pow(1+params.inflation, y);
+    /** ★NEW 健康寿命後は活動量が落ち生活費が下がる（旅行・趣味・外食が減る） */
+    let healthReduceNow = 0;
+    if (params.healthAge > 0 && ageH >= params.healthAge) healthReduceNow = livingNow * (params.healthReducePct || 0);
 
     /** ★NEW ライフイベント（スポット支出・収入） */
     let spotExpenseThisYear = 0, spotIncomeThisYear = 0;
@@ -5770,7 +5826,7 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
       indexAsset = indexAsset * (1 + indexNetReturn);
       divAsset   = divAsset   * (1 + divGrowthRet);
 
-      const livingAdj    = Math.max(livingNow - childReduceNow, livingNow * 0.5); // 最低でも半分は残す
+      const livingAdj    = Math.max(livingNow - childReduceNow - healthReduceNow, livingNow * 0.4); // 最低でも4割は残す
       const totalExpense = livingAdj + specialNow + edu + taxes.total + loanPayThisYear + spotExpenseThisYear;
       const totalIncome  = sideNet + spouseNet + allowance + hsSupport + pensionIncome + dividendNetIncome + spotIncomeThisYear;
       const drawdown = Math.max(totalExpense - totalIncome, 0);
