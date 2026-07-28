@@ -3752,7 +3752,8 @@ function renderAssetTimeline(){
       <div style="flex:1 1 320px;position:relative;height:240px;min-width:0;"><canvas id="assetTimelineChartCv"></canvas></div>
       <div style="flex:0 1 260px;min-width:220px;">
         <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:2px;text-align:center;">資産配分（${latest.date||'最新'}）</div>
-        <div style="position:relative;height:220px;"><canvas id="assetAllocPieCv"></canvas></div>
+        <div style="position:relative;height:180px;"><canvas id="assetAllocPieCv"></canvas></div>
+        <div id="assetAllocLegend" style="margin-top:6px;"></div>
       </div>
     </div>
     <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">単位：万円。同じ月に再取得すると上書き（月末近くに取得すると月末値の近似になります）。損益除外＝総資産−株式評価損益−投信評価損益。</div>`;
@@ -3768,10 +3769,20 @@ function renderAssetTimeline(){
     if(sv||fv){
       const items=[['現金',cashV,'#4a90d9'],['株式',sv,'#b8413d'],['投資信託',fv,'#e8a33d']];
       if(other>10000) items.push(['その他',other,'#8a8e98']);
-      window.assetAllocPie=new Chart(pieCv.getContext('2d'),{type:'doughnut',
+      const totV=items.reduce((s,x)=>s+x[1],0)||1;
+      const DL=(typeof ChartDataLabels!=='undefined')?[ChartDataLabels]:[];
+      window.assetAllocPie=new Chart(pieCv.getContext('2d'),{type:'doughnut',plugins:DL,
         data:{labels:items.map(x=>x[0]),datasets:[{data:items.map(x=>Math.round(x[1]/10000)),backgroundColor:items.map(x=>x[2]),borderColor:'#fff',borderWidth:1.5}]},
-        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:12}},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+          datalabels:{color:'#fff',font:{size:11,weight:'700'},formatter:(v,ctx)=>{const t=ctx.dataset.data.reduce((s,x)=>s+x,0);const p=t?v/t*100:0;return p>=6?p.toFixed(0)+'%':'';}},
           tooltip:{callbacks:{label:c=>{const t=c.dataset.data.reduce((s,v)=>s+v,0);return `${c.label}: ${c.parsed.toLocaleString()}万 (${(c.parsed/t*100).toFixed(1)}%)`;}}}}}});
+      // 下に内訳リスト（金額＋％を常時表示）
+      const lg=document.getElementById('assetAllocLegend');
+      if(lg) lg.innerHTML=items.map(x=>`<div style="display:flex;align-items:center;gap:6px;font-size:12px;padding:1px 0;">
+        <span style="width:10px;height:10px;border-radius:2px;background:${x[2]};flex:none;"></span>
+        <span style="flex:1;color:var(--ink-soft);">${x[0]}</span>
+        <span style="font-family:'JetBrains Mono',monospace;color:var(--ink);">${Math.round(x[1]/10000).toLocaleString()}万</span>
+        <span style="font-family:'JetBrains Mono',monospace;color:var(--teal-deep);font-weight:700;width:44px;text-align:right;">${(x[1]/totV*100).toFixed(1)}%</span></div>`).join('');
     } else {
       pieCv.parentElement.innerHTML='<div style="font-size:11.5px;color:var(--ink-mute);padding:20px 8px;text-align:center;">円グラフは次回の取得から表示されます（もう一度「📥 取得」を押すと今月分に配分が記録されます）</div>';
     }
@@ -4364,9 +4375,9 @@ function renderRecurring() {
     <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <button type="button" id="rcAddBtn" style="padding:6px 12px;background:var(--teal-bg);color:var(--teal-deep);border:1px dashed var(--teal);border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">＋ 定期費用を追加</button>
       <span style="font-size:12px;color:var(--ink-mute);">よく使う特別費：</span>
-      <button type="button" class="rc-preset" data-preset="oya_kaigo" style="font-size:12px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;">🙏 親の介護</button>
-      <button type="button" class="rc-preset" data-preset="jibun_kaigo" style="font-size:12px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;">🏥 自分の介護・老人ホーム</button>
-      <button type="button" class="rc-preset" data-preset="sougi" style="font-size:12px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;">⚰️ 葬儀・お墓</button>
+      <button type="button" class="rc-preset" data-preset="oya_kaigo" style="font-size:12px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;">親の介護</button>
+      <button type="button" class="rc-preset" data-preset="jibun_kaigo" style="font-size:12px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;">自分の介護・老人ホーム</button>
+      <button type="button" class="rc-preset" data-preset="sougi" style="font-size:12px;padding:5px 10px;background:var(--bg-card);border:1px solid var(--border);border-radius:5px;cursor:pointer;font-family:inherit;">葬儀・お墓</button>
     </div>
     <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">プリセットは一般的な目安額・年齢で入ります。金額・時期は後から編集できます。</div>`;
   host.querySelectorAll('tr[data-i]').forEach(tr => {
