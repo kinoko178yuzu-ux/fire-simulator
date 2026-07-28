@@ -3363,6 +3363,9 @@ function pfMonthly(rows){
 let hdCharts = { sector:null, cyc:null, yield:null, month:null, tree:null };
 function destroyHdCharts(){ Object.keys(hdCharts).forEach(k=>{ if(hdCharts[k]){ hdCharts[k].destroy(); hdCharts[k]=null; } }); }
 let hdLastRows = [];
+let hdAllCtx = null;                                  // 全銘柄テーブル描画用コンテキスト
+let _hdFilter = { sector:'', text:'' };               // 絞り込み（業種・コード/名称）
+let _hdSort = { key:'evalv', dir:-1 };                // 並び替え（既定=評価額の降順）
 /** IR BANK / Yahoo!ファイナンスへのリンクセル */
 function hdLinks(code){
   const jp = /^\d/.test(code);
@@ -3977,28 +3980,6 @@ function renderHighDiv(){
   const secPct={}; sectors.forEach(s=>{ secPct[s]=basisTotal? bySector[s]/basisTotal*100 : 0; });
   const totalDivDisp = rows.reduce((s,r)=>s+dispVal(r),0);
 
-  const allRows=[...rows].sort((a,b)=>b.evalv-a.evalv).map(r=>{
-    const w=totalEval? (r.evalv/totalEval*100):0;
-    const dw=totalDivDisp? dispVal(r)/totalDivDisp*100 : 0;   // 配当割合
-    const plc = r.pl>=0?'var(--green)':'var(--rose)';
-    const sp = secPct[r.sector]||0;
-    return `<tr><td>${r.code}</td><td style="text-align:left;">${r.name}</td>
-      <td style="text-align:left;color:var(--ink-mute);font-size:11.5px;white-space:nowrap;">${r.sector} <span style="color:var(--ink-mute);">(${sp.toFixed(1)}%)</span></td>
-      <td style="text-align:right;">${r.shares.toLocaleString()}</td>
-      <td style="text-align:right;">${yenComma(r.cost)}</td>
-      <td style="text-align:right;">${yenComma(r.purchase)}</td>
-      <td style="text-align:right;">${yenComma(r.price)}</td>
-      <td style="text-align:right;">${yenComma(r.evalv)}</td>
-      <td style="text-align:right;">${w.toFixed(2)}%</td>
-      <td style="text-align:right;color:${plc};">${r.pl>=0?'+':''}${yenComma(r.pl)}</td>
-      <td style="text-align:right;color:${plc};font-weight:700;">${r.purchase>0?`${r.pl>=0?'+':''}${(r.pl/r.purchase*100).toFixed(1)}%`:'–'}</td>
-      <td style="text-align:right;">${yenComma(r.dps)}</td>
-      <td style="text-align:right;font-weight:700;">${yenComma(Math.round(dispVal(r)))}</td>
-      <td style="text-align:right;${dw>=10?'background:#fff2b8;font-weight:700;':''}">${dw.toFixed(2)}%</td>
-      <td style="text-align:right;">${r.ynow.toFixed(2)}%</td>
-      <td style="text-align:right;color:var(--ink-mute);">${r.ycost.toFixed(2)}%</td>
-      ${hdLinks(r.code)}</tr>`;
-  }).join('');
 
   // ③ 買い増し検討：集中警告＋候補（お手本シートの10%黄色警告を拡張）
   const wPct=r=>totalEval? r.evalv/totalEval*100 : 0;
@@ -4029,6 +4010,7 @@ function renderHighDiv(){
       <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">⚠️ これは保有銘柄の機械的な並び替えであり、投資助言ではありません。購入判断はIR・業績をご自身で確認してください。</div>
     </details>`;
 
+  hdAllCtx = { totalEval, totalDivDisp, secPct: {...secPct}, hdDisp, dispLabel };   // 全銘柄テーブル描画用
   host.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px;">
       ${card('保有資産額（評価額）', yenComma(totalEval)+'円')}
@@ -4058,8 +4040,8 @@ function renderHighDiv(){
       <div style="margin:4px 0 8px;"><label style="font-size:12.5px;color:var(--ink-soft);">業種 <select id="hdTopSector" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">${sectorOpts}</select></label></div>
       <div style="overflow-x:auto;"><table class="bg-table zebra" style="min-width:420px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種</th><th>配当金</th></tr></thead><tbody id="hdTop20Body"></tbody></table></div>
     </details>
-    <details><summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📋 全銘柄（${rows.length}）</summary>
-      <div style="overflow-x:auto;"><table class="bg-table zebra" style="min-width:1040px;"><thead><tr><th>code</th><th>銘柄名</th><th>業種(割合)</th><th>保有数</th><th>取得単価</th><th>購入額</th><th>株価</th><th>評価額</th><th>割合</th><th>損益</th><th>損益%</th><th>配当単価</th><th>配当金(${dispLabel})</th><th>配当割合</th><th>利回り時価</th><th>利回り取得</th><th>IR</th><th>Y!</th></tr></thead><tbody>${allRows}</tbody></table></div>
+    <details id="hdAllDetails" open><summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">📋 全銘柄（${rows.length}）— 絞り込み・並び替え可</summary>
+      <div id="hdAllStocks"></div>
     </details>`;
 
   // チャート
@@ -4068,7 +4050,9 @@ function renderHighDiv(){
   const DL = (typeof ChartDataLabels!=='undefined') ? [ChartDataLabels] : []; // 配当グラフだけに適用（FIRE側は無効）
   const COL=['#0d6e6e','#d97706','#16a34a','#b8413d','#8a5cf6','#0891b2','#ca8a04','#db2777','#65a30d','#9a8c70','#64748b','#e07a5f','#3d8361','#7c3aed','#ef4444','#14b8a6','#f59e0b','#6366f1'];
   const sc=document.getElementById('hdSectorChart');
-  if(sc) hdCharts.sector=new Chart(sc.getContext('2d'),{type:'bar',plugins:DL,data:{labels:sectors,datasets:[{data:sectors.map(s=>+(bySector[s]/totalEval*100).toFixed(1)),backgroundColor:sectors.map((_,i)=>COL[i%COL.length])}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,layout:{padding:{right:28}},plugins:{legend:{display:false},datalabels:{anchor:'end',align:'end',clamp:true,color:'#555',font:{size:10,weight:'700'},formatter:v=>v+'%'},tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed.x}%（${yenComma(bySector[c.label])}円）`}}},scales:{x:{ticks:{font:{size:10},callback:v=>v+'%'}},y:{ticks:{font:{size:10}}}}}});
+  if(sc) hdCharts.sector=new Chart(sc.getContext('2d'),{type:'bar',plugins:DL,data:{labels:sectors,datasets:[{data:sectors.map(s=>+(bySector[s]/totalEval*100).toFixed(1)),backgroundColor:sectors.map((_,i)=>COL[i%COL.length])}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+    onClick:(e,els)=>{ if(els&&els.length){ _hdFilter.sector=sectors[els[0].index]; renderHdAllStocks(); const d=document.getElementById('hdAllDetails'); if(d) d.open=true; const t=document.getElementById('hdAllStocks'); if(t) t.scrollIntoView({behavior:'smooth',block:'start'}); } },
+    layout:{padding:{right:28}},plugins:{legend:{display:false},datalabels:{anchor:'end',align:'end',clamp:true,color:'#555',font:{size:10,weight:'700'},formatter:v=>v+'%'},tooltip:{callbacks:{label:c=>`${c.label}: ${c.parsed.x}%（${yenComma(bySector[c.label])}円）`}}},scales:{x:{ticks:{font:{size:10},callback:v=>v+'%'}},y:{ticks:{font:{size:10}}}}}});
   const cc=document.getElementById('hdCycChart');
   if(cc) hdCharts.cyc=new Chart(cc.getContext('2d'),{type:'doughnut',plugins:DL,data:{labels:['景気敏感','ディフェンシブ','未分類'].filter(k=>cyc[k]>0),datasets:[{data:['景気敏感','ディフェンシブ','未分類'].filter(k=>cyc[k]>0).map(k=>cyc[k]),backgroundColor:['#d97706','#0d6e6e','#94a3b8']}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'right',labels:{font:{size:11},boxWidth:12}},datalabels:{color:'#fff',font:{size:12,weight:'700'},formatter:(v,ctx)=>{const t=ctx.dataset.data.reduce((s,x)=>s+x,0);return (v/t*100).toFixed(1)+'%';}},tooltip:{callbacks:{label:c=>{const t=c.dataset.data.reduce((s,v)=>s+v,0);return `${c.label}: ${(c.parsed/t*100).toFixed(1)}%（${yenComma(c.parsed)}円）`;}}}}}});
   const yc=document.getElementById('hdYieldChart');
@@ -4096,6 +4080,82 @@ function renderHighDiv(){
   renderHdTop20();
   const tsel=document.getElementById('hdTopSector');
   if(tsel) tsel.addEventListener('change', renderHdTop20);
+  // 全銘柄テーブル（絞り込み・並び替え対応）
+  renderHdAllStocks();
+}
+
+/** 全銘柄テーブル：絞り込み（業種・コード/名称）＋並び替え（列ヘッダクリック）対応 */
+const HD_ALL_COLS = [
+  { key:'code',   label:'code',       align:'left',  num:false, get:r=>r.code },
+  { key:'name',   label:'銘柄名',     align:'left',  num:false, get:r=>r.name },
+  { key:'sector', label:'業種(割合)', align:'left',  num:false, get:r=>r.sector },
+  { key:'shares', label:'保有数',     align:'right', num:true,  get:r=>r.shares },
+  { key:'cost',   label:'取得単価',   align:'right', num:true,  get:r=>r.cost },
+  { key:'purchase',label:'購入額',    align:'right', num:true,  get:r=>r.purchase },
+  { key:'price',  label:'株価',       align:'right', num:true,  get:r=>r.price },
+  { key:'evalv',  label:'評価額',     align:'right', num:true,  get:r=>r.evalv },
+  { key:'weight', label:'割合',       align:'right', num:true,  get:(r,c)=>c.totalEval? r.evalv/c.totalEval:0 },
+  { key:'pl',     label:'損益',       align:'right', num:true,  get:r=>r.pl },
+  { key:'plpct',  label:'損益%',      align:'right', num:true,  get:r=>r.purchase>0? r.pl/r.purchase:0 },
+  { key:'dps',    label:'配当単価',   align:'right', num:true,  get:r=>r.dps },
+  { key:'div',    label:'配当金',     align:'right', num:true,  get:(r,c)=>c.hdDisp==='gross'? r.dividend:r.net },
+  { key:'divpct', label:'配当割合',   align:'right', num:true,  get:(r,c)=>c.totalDivDisp? (c.hdDisp==='gross'?r.dividend:r.net)/c.totalDivDisp:0 },
+  { key:'ynow',   label:'利回り時価', align:'right', num:true,  get:r=>r.ynow },
+  { key:'ycost',  label:'利回り取得', align:'right', num:true,  get:r=>r.ycost },
+];
+function renderHdAllStocks(){
+  const host=document.getElementById('hdAllStocks'); if(!host || !hdAllCtx) return;
+  const c=hdAllCtx, rows=hdLastRows||[];
+  const dv=r=> c.hdDisp==='gross'? r.dividend : r.net;
+  const sectorsAll=[...new Set(rows.map(r=>r.sector))].sort();
+  // 絞り込み
+  let list=rows.slice();
+  if(_hdFilter.sector) list=list.filter(r=>r.sector===_hdFilter.sector);
+  if(_hdFilter.text){ const q=_hdFilter.text.toLowerCase(); list=list.filter(r=>(r.code||'').toLowerCase().includes(q)||(r.name||'').toLowerCase().includes(q)); }
+  // 並び替え
+  const col=HD_ALL_COLS.find(x=>x.key===_hdSort.key)||HD_ALL_COLS[7];
+  list.sort((a,b)=>{ const va=col.get(a,c), vb=col.get(b,c);
+    if(col.num) return (_hdSort.dir)*((+vb||0)-(+va||0)===0?0:((+va||0)<(+vb||0)?-1:1));
+    return (_hdSort.dir)*String(va).localeCompare(String(vb),'ja'); });
+  // ヘッダ（クリックで並び替え・現在キーに▲▼）
+  const arrow=(k)=> _hdSort.key===k ? (_hdSort.dir<0?' ▼':' ▲') : '';
+  const th=HD_ALL_COLS.map(x=>`<th class="hd-sorth" data-k="${x.key}" style="cursor:pointer;white-space:nowrap;" title="クリックで並び替え">${x.label}${arrow(x.key)}</th>`).join('')+'<th>IR</th><th>Y!</th>';
+  const body=list.map(r=>{ const w=c.totalEval? r.evalv/c.totalEval*100:0; const dw=c.totalDivDisp? dv(r)/c.totalDivDisp*100:0;
+    const plc=r.pl>=0?'var(--green)':'var(--rose)'; const sp=c.secPct[r.sector]||0;
+    return `<tr><td>${r.code}</td><td style="text-align:left;">${r.name}</td>
+      <td class="hd-seccell" data-s="${r.sector}" style="text-align:left;color:var(--ink-mute);font-size:11.5px;white-space:nowrap;cursor:pointer;" title="クリックでこの業種だけ表示">${r.sector} (${sp.toFixed(1)}%)</td>
+      <td style="text-align:right;">${r.shares.toLocaleString()}</td>
+      <td style="text-align:right;">${yenComma(r.cost)}</td>
+      <td style="text-align:right;">${yenComma(r.purchase)}</td>
+      <td style="text-align:right;">${yenComma(r.price)}</td>
+      <td style="text-align:right;">${yenComma(r.evalv)}</td>
+      <td style="text-align:right;">${w.toFixed(2)}%</td>
+      <td style="text-align:right;color:${plc};">${r.pl>=0?'+':''}${yenComma(r.pl)}</td>
+      <td style="text-align:right;color:${plc};font-weight:700;">${r.purchase>0?`${r.pl>=0?'+':''}${(r.pl/r.purchase*100).toFixed(1)}%`:'–'}</td>
+      <td style="text-align:right;">${yenComma(r.dps)}</td>
+      <td style="text-align:right;font-weight:700;">${yenComma(Math.round(dv(r)))}</td>
+      <td style="text-align:right;${dw>=10?'background:#fff2b8;font-weight:700;':''}">${dw.toFixed(2)}%</td>
+      <td style="text-align:right;">${r.ynow.toFixed(2)}%</td>
+      <td style="text-align:right;color:var(--ink-mute);">${r.ycost.toFixed(2)}%</td>
+      ${hdLinks(r.code)}</tr>`; }).join('');
+  const secOpts=['<option value="">全業種</option>'].concat(sectorsAll.map(s=>`<option value="${s}"${s===_hdFilter.sector?' selected':''}>${s}</option>`)).join('');
+  host.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px;">
+      <label style="font-size:12px;color:var(--ink-soft);">業種 <select id="hdFltSector" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">${secOpts}</select></label>
+      <input id="hdFltText" type="search" placeholder="コード・銘柄名で検索" value="${esc(_hdFilter.text)}" style="font-size:12.5px;padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-family:inherit;min-width:170px;">
+      <span style="font-size:12px;color:var(--ink-mute);">${list.length} / ${rows.length} 件</span>
+      ${(_hdFilter.sector||_hdFilter.text)?`<button type="button" id="hdFltClear" style="font-size:11.5px;padding:3px 10px;border:1px solid var(--border);border-radius:5px;background:var(--bg-subtle);cursor:pointer;font-family:inherit;">絞り込み解除</button>`:''}
+      <span style="font-size:11px;color:var(--ink-mute);margin-left:auto;">列見出しクリックで並び替え</span>
+    </div>
+    <div style="overflow-x:auto;"><table class="bg-table zebra" style="min-width:1040px;"><thead><tr>${th}</tr></thead><tbody>${body||'<tr><td colspan="18" style="color:var(--ink-mute);">該当銘柄なし</td></tr>'}</tbody></table></div>`;
+  // イベント
+  host.querySelectorAll('.hd-sorth').forEach(h=>h.addEventListener('click',()=>{ const k=h.dataset.k;
+    if(_hdSort.key===k) _hdSort.dir*=-1; else { _hdSort.key=k; _hdSort.dir = (k==='code'||k==='name'||k==='sector')?1:-1; }
+    renderHdAllStocks(); }));
+  host.querySelectorAll('.hd-seccell').forEach(td=>td.addEventListener('click',()=>{ _hdFilter.sector=td.dataset.s; renderHdAllStocks(); }));
+  const fs=host.querySelector('#hdFltSector'); if(fs) fs.addEventListener('change',()=>{ _hdFilter.sector=fs.value; renderHdAllStocks(); });
+  const ft=host.querySelector('#hdFltText'); if(ft) ft.addEventListener('input',()=>{ _hdFilter.text=ft.value.trim(); renderHdAllStocks(); const el=host.querySelector('#hdFltText'); if(el){ el.focus(); el.setSelectionRange(el.value.length,el.value.length); } });
+  const fc=host.querySelector('#hdFltClear'); if(fc) fc.addEventListener('click',()=>{ _hdFilter={sector:'',text:''}; renderHdAllStocks(); });
 }
 function yenComma(n){ return Math.round(+n||0).toLocaleString(); }
 
