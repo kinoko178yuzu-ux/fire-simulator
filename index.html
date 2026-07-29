@@ -3981,35 +3981,6 @@ function renderHighDiv(){
   const totalDivDisp = rows.reduce((s,r)=>s+dispVal(r),0);
 
 
-  // ③ 買い増し検討：集中警告＋候補（お手本シートの10%黄色警告を拡張）
-  const wPct=r=>totalEval? r.evalv/totalEval*100 : 0;
-  const heavyStocks=rows.filter(r=>wPct(r)>=10).sort((a,b)=>wPct(b)-wPct(a));
-  const heavySectors=sectors.filter(s=>secPct[s]>=25);
-  const sensPct=basisTotal? cyc['景気敏感']/basisTotal*100 : 0;
-  const defPct =basisTotal? cyc['ディフェンシブ']/basisTotal*100 : 0;
-  const warnItems=[];
-  heavyStocks.forEach(r=>warnItems.push(`🟡 <b>${r.code} ${r.name}</b> が1銘柄で <b>${wPct(r).toFixed(1)}%</b>（目安10%以下）`));
-  heavySectors.forEach(s=>warnItems.push(`🟠 業種「<b>${s}</b>」に <b>${secPct[s].toFixed(1)}%</b> 集中（目安25%以下）`));
-  if(sensPct>60||defPct>60) warnItems.push(`🔴 景気敏感 ${sensPct.toFixed(0)}% / ディフェンシブ ${defPct.toFixed(0)}% — バランスが偏っています（目安 50:50±10）`);
-  const buyScore=r=>r.ynow - wPct(r)*0.5 - (secPct[r.sector]||0)*0.1;
-  const buyCands=rows.filter(r=>wPct(r)<8 && r.dps>0).sort((a,b)=>buyScore(b)-buyScore(a)).slice(0,12);
-  const buyRows=buyCands.map((r,i)=>{ const w=wPct(r), sp=secPct[r.sector]||0; const plp=r.purchase>0? r.pl/r.purchase*100 : 0;
-    return `<tr><td style="text-align:right;color:var(--ink-mute);">${i+1}</td><td>${r.code}</td><td style="text-align:left;">${r.name}</td>
-      <td style="text-align:left;color:var(--ink-mute);font-size:11.5px;">${r.sector} <span style="color:${sp>=25?'var(--rose)':'var(--ink-mute)'};">(${sp.toFixed(0)}%)</span></td>
-      <td style="text-align:right;">${w.toFixed(1)}%</td>
-      <td style="text-align:right;font-weight:700;color:var(--teal-deep);">${r.ynow.toFixed(2)}%</td>
-      <td style="text-align:right;color:var(--ink-mute);">${r.ycost.toFixed(2)}%</td>
-      <td style="text-align:right;color:${plp<0?'var(--rose)':'var(--green)'};">${plp>=0?'+':''}${plp.toFixed(1)}%</td></tr>`; }).join('');
-  const buySection=`
-    <details style="margin-bottom:14px;" open>
-      <summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">🛒 買い増し検討（集中警告と候補）</summary>
-      ${warnItems.length?`<div style="background:#fdf6e9;border:1px solid var(--amber,#d97706);border-radius:8px;padding:9px 12px;margin:6px 0 10px;font-size:12.5px;line-height:1.8;">${warnItems.join('<br>')}</div>`
-        :`<div style="font-size:12.5px;color:var(--green);margin:6px 0 10px;">✅ 集中しすぎの銘柄・業種はありません（1銘柄10%・1業種25%・景気バランス50:50±10 の目安内）。</div>`}
-      <div style="font-size:12px;color:var(--ink-mute);margin-bottom:4px;">おすすめ順＝時価利回りが高く、銘柄構成比と業種割合が小さい順（スコア＝時価利回り − 構成比×0.5 − 業種割合×0.1）。構成比8%以上の銘柄は除外。</div>
-      <div style="overflow-x:auto;"><table class="bg-table zebra" style="min-width:640px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種(割合)</th><th>構成比</th><th>利回り時価</th><th>利回り取得</th><th>損益%</th></tr></thead><tbody>${buyRows||'<tr><td colspan="8" style="color:var(--ink-mute);">候補なし（配当単価が未設定の銘柄は対象外）</td></tr>'}</tbody></table></div>
-      <div style="font-size:11.5px;color:var(--ink-mute);margin-top:4px;">⚠️ これは保有銘柄の機械的な並び替えであり、投資助言ではありません。購入判断はIR・業績をご自身で確認してください。</div>
-    </details>`;
-
   hdAllCtx = { totalEval, totalDivDisp, secPct: {...secPct}, hdDisp, dispLabel };   // 全銘柄テーブル描画用
   host.innerHTML=`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:14px;">
@@ -4035,7 +4006,6 @@ function renderHighDiv(){
       <div style="font-size:12.5px;font-weight:700;color:var(--ink-soft);margin-bottom:4px;">銘柄構成比（評価額・景気敏感 / ディフェンシブ）</div>
       <div style="position:relative;height:300px;"><canvas id="hdTreeChart"></canvas></div>
     </div>
-    ${buySection}
     <details style="margin-bottom:10px;" open><summary style="font-size:14px;font-weight:700;color:var(--teal-deep);cursor:pointer;padding:6px 0;">🏅 配当金 Top20</summary>
       <div style="margin:4px 0 8px;"><label style="font-size:12.5px;color:var(--ink-soft);">業種 <select id="hdTopSector" style="font-size:12.5px;padding:3px 6px;border:1px solid var(--border);border-radius:4px;font-family:inherit;">${sectorOpts}</select></label></div>
       <div style="overflow-x:auto;"><table class="bg-table zebra" style="min-width:420px;"><thead><tr><th>No</th><th>code</th><th>銘柄名</th><th>業種</th><th>配当金</th></tr></thead><tbody id="hdTop20Body"></tbody></table></div>
@@ -4969,9 +4939,10 @@ function _wouldClobber(newData) {
   let stored; try { stored = JSON.parse(raw); } catch { return false; }
   // ① 蓄積データ全般を空で上書き
   if (_dataRichness(stored) >= 5 && _dataRichness(newData) === 0) return true;
-  // ② やりたいことリストの費用が丸ごと消える保存（多重タブで費用が消えた事故の再発防止）
+  // ② やりたいことリストの費用が一度に2件以上減る保存をブロック。
+  //    手動編集は1回の保存で1件ずつしか変わらない → 2件以上の減少＝別タブの上書き事故とみなす。
   const bkCost = (o) => { try { const bk=JSON.parse(o.bucketListJson||'null'); return bk&&bk.items? bk.items.filter(i=>+i.cost>0).length : 0; } catch { return 0; } };
-  if (bkCost(stored) >= 2 && bkCost(newData) === 0) return true;
+  if (bkCost(stored) - bkCost(newData) >= 2) return true;
   return false;
 }
 
