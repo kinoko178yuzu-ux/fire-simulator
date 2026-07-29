@@ -24,8 +24,13 @@ URL = (
 )
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "stock_master.js")
 
+# 元DBで業種が空欄の行（日本銀行・信金中央金庫の出資証券）を市場区分から補う
+SEC_FALLBACK = {"出資証券": "その他金融業"}
+
 # コードを持たない米国ETF等は元DBに無いので、ここで補う（従来の内蔵マスタ由来）
 EXTRA = {
+    # 新規上場などで元DBに未収載のもの
+    "208A": {"name": "", "sec": "情報・通信業", "dps": 90.0, "months": [3, 6, 9, 12]},
     "HDV":  {"name": "iShares Core High Dividend ETF", "sec": "米国ETF", "dps": 128.0, "months": [3, 6, 9, 12]},
     "SPYD": {"name": "SPDR Portfolio S&P 500 High Dividend ETF", "sec": "米国ETF", "dps": 321.0, "months": [3, 6, 9, 12]},
     "VYM":  {"name": "Vanguard High Dividend Yield ETF", "sec": "米国ETF", "dps": 567.0, "months": [3, 6, 9, 12]},
@@ -51,7 +56,7 @@ def main():
     for r in body:
         code = r[0].strip()
         name = r[1].strip().replace("|", "").replace("　", " ")
-        sec = r[3].strip() or "その他"
+        sec = r[3].strip() or SEC_FALLBACK.get(r[2].strip(), "その他金融業")
         try:
             dps = float((r[4] or "0").strip() or 0)
         except ValueError:

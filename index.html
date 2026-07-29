@@ -19,6 +19,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-treemap@3.1.0/dist/chartjs-chart-treemap.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
 <!-- Firebase（クラウド同期用） -->
+<script src="stock_master.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
@@ -1999,7 +2000,7 @@ select:focus { border-color: var(--teal); }
           <b style="color:var(--amber,#d97706);">🚀 はじめてガイド — 保有銘柄がまだ登録されていません</b><br>
           ① マネーフォワードの <b>資産 → ポートフォリオ → 「株式（現物）」の表</b>を、マウスで表全体をなぞって選択 → コピー（Cmd+C）<br>
           ② <button type="button" onclick="const d=document.getElementById('hdImportDetails');d.open=true;setTimeout(()=>{const t=document.getElementById('hdPasteArea');if(t){t.scrollIntoView({behavior:'smooth',block:'center'});t.focus();}},100);" style="font-size:13px;padding:4px 14px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📋 貼付欄を開く</button>　← 開いた欄に貼り付け（Cmd+V）てボタンを押すだけ<br>
-          ③ 主要な高配当株75銘柄は<b>業種・配当単価も自動で入ります</b>（内蔵マスタ）。マスタ外の銘柄だけ「✏️ 銘柄の編集」で補完 → 下に分析ダッシュボードが出たら完了。続けて STEP2 で配当実績もどうぞ
+          ③ <b>業種・1株配当・権利確定月は内蔵DB（全上場銘柄）から自動で入ります</b>。「未設定」が残ったら 🅒 の<b>内蔵DBで銘柄情報を補完</b>を押す → 下に分析ダッシュボードが出たら完了。続けてSTEP2 で配当実績もどうぞ
         </div>
 
         <!-- STEP1: 保有銘柄 -->
@@ -2011,12 +2012,17 @@ select:focus { border-color: var(--teal); }
             <span class="pf-freshness" style="font-size:12px;color:var(--ink-mute);"></span>
             <span class="mf-asset-status" style="font-size:12.5px;min-height:18px;"></span>
           </div>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">🅑 （手動）マネーフォワードの表をコピーして貼り付け <span style="font-weight:400;color:var(--ink-mute);">→ 上のボタンが使えない時に。新しい銘柄は内蔵マスタ（75銘柄）で業種・配当単価も自動補完</span></div>
+          <div style="font-size:12.5px;color:var(--ink-soft);margin:8px 0 4px;font-weight:700;">🅑 （手動）マネーフォワードの表をコピーして貼り付け <span style="font-weight:400;color:var(--ink-mute);">→ 上のボタンが使えない時に。新しい銘柄は内蔵DB（全上場銘柄）で業種・配当単価も自動補完</span></div>
           <div style="font-size:12px;color:var(--ink-mute);margin-bottom:6px;">マネフォ側の操作：<b>資産 → ポートフォリオ → 「株式（現物）」の表</b>を、マウスで表全体をなぞって選択 → コピー（Cmd+C）→ 下の欄に貼り付け（Cmd+V）→ ボタンを押す。複数口座分まとめてOK。</div>
           <textarea id="hdPasteArea" rows="4" placeholder="ここにマネフォの表を貼り付け（例：1343	NFJ-REIT	215	1,886	1,914	411,510円 …）" style="width:100%;font-size:12.5px;font-family:'JetBrains Mono',monospace;border:1px solid var(--border);background:var(--bg-subtle);padding:8px;box-sizing:border-box;"></textarea>
           <button type="button" id="hdPasteBtn" style="width:100%;margin-top:6px;padding:8px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;">貼付データで保有数・株価を更新</button>
           <div id="hdImportResult" style="font-size:12.5px;margin-top:6px;"></div>
-          <div style="font-size:12.5px;color:var(--ink-soft);margin:12px 0 4px;font-weight:700;">🅒 （初回のみ）Googleシート「管理シート」のCSVを取込 <span style="font-weight:400;color:var(--ink-mute);">→ シートで管理してきた業種・配当単価ごと一括移行できます</span></div>
+          <div style="font-size:12.5px;color:var(--ink-soft);margin:12px 0 4px;font-weight:700;">🅒 業種・配当単価が「未設定」の銘柄を内蔵DBで埋める <span style="font-weight:400;color:var(--ink-mute);">→ 新しく買った銘柄はこれ1回で業種・1株配当・権利確定月が入ります</span></div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <button type="button" onclick="applyStockDbFill()" style="font-size:13px;padding:6px 16px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">🗂 内蔵DBで銘柄情報を補完</button>
+            <span id="stockDbInfo" style="font-size:11.5px;color:var(--ink-mute);"></span>
+          </div>
+          <div style="font-size:12.5px;color:var(--ink-soft);margin:12px 0 4px;font-weight:700;">🅓 （初回のみ）Googleシート「管理シート」のCSVを取込 <span style="font-weight:400;color:var(--ink-mute);">→ シートで管理してきた業種・配当単価ごと一括移行できます</span></div>
           <input type="file" id="hdCsvInput" accept=".csv,text/csv" style="font-size:12.5px;margin-bottom:4px;">
           <div style="font-size:12px;color:var(--ink-mute);">Googleシート側の操作：ファイル → ダウンロード → カンマ区切り（.csv）</div>
         </details>
@@ -3262,6 +3268,25 @@ const HD_US_WHT = 0.10;      // 米国 源泉徴収（外国税額控除前）
 /** 銘柄コード→支払月（スプレッドシート集計タブから移行。新規銘柄は未設定でOK・後から編集可） */
 const HD_MASTER = {"1343":{"s":"ETF・他","d":92.0},"1489":{"s":"ETF・他","d":91.0},"1723":{"s":"建設業","d":56.0},"1928":{"s":"建設業","d":145.0},"1951":{"s":"建設業","d":80.0},"1976":{"s":"建設業","d":65.0},"1980":{"s":"建設業","d":85.0},"2003":{"s":"食料品","d":70.0},"2124":{"s":"サービス業","d":38.0},"2169":{"s":"サービス業","d":74.0},"2296":{"s":"食料品","d":155.0},"2317":{"s":"情報・通信業","d":18.0},"2391":{"s":"サービス業","d":44.0},"2393":{"s":"サービス業","d":74.0},"2659":{"s":"小売業","d":110.0},"3003":{"s":"不動産業","d":67.0},"3076":{"s":"卸売業","d":125.0},"3231":{"s":"不動産業","d":44.0},"3333":{"s":"小売業","d":50.0},"3771":{"s":"情報・通信業","d":70.0},"3817":{"s":"情報・通信業","d":220.0},"3834":{"s":"情報・通信業","d":25.0},"4008":{"s":"化学","d":44.0},"4042":{"s":"化学","d":100.0},"4248":{"s":"化学","d":36.0},"4345":{"s":"サービス業","d":29.0},"4401":{"s":"化学","d":112.0},"4540":{"s":"医薬品","d":147.0},"4641":{"s":"サービス業","d":108.0},"4752":{"s":"情報・通信業","d":66.0},"4832":{"s":"情報・通信業","d":68.0},"5186":{"s":"ゴム製品","d":160.0},"5334":{"s":"ガラス・土石製品","d":205.0},"5388":{"s":"ガラス・土石製品","d":40.0},"5464":{"s":"鉄鋼","d":36.0},"6073":{"s":"サービス業","d":62.0},"6345":{"s":"機械","d":60.0},"6381":{"s":"機械","d":87.0},"6432":{"s":"機械","d":210.0},"6458":{"s":"機械","d":50.0},"6539":{"s":"サービス業","d":56.0},"6652":{"s":"電気機器","d":130.0},"6785":{"s":"電気機器","d":90.0},"7292":{"s":"輸送用機器","d":240.0},"7438":{"s":"卸売業","d":52.0},"7483":{"s":"卸売業","d":110.0},"7723":{"s":"精密機器","d":113.0},"7749":{"s":"精密機器","d":100.0},"7820":{"s":"その他製品","d":36.0},"7921":{"s":"その他製品","d":120.0},"7931":{"s":"化学","d":145.0},"7989":{"s":"金属製品","d":70.0},"7994":{"s":"その他製品","d":104.0},"8058":{"s":"卸売業","d":110.0},"8130":{"s":"卸売業","d":155.0},"8309":{"s":"銀行業","d":185.0},"8584":{"s":"その他金融業","d":200.0},"8593":{"s":"その他金融業","d":46.0},"8725":{"s":"保険業","d":160.0},"9057":{"s":"陸運業","d":96.0},"9069":{"s":"陸運業","d":50.0},"9233":{"s":"空運業","d":49.0},"9303":{"s":"倉庫・運輸関連業","d":103.0},"9304":{"s":"倉庫・運輸関連業","d":56.0},"9364":{"s":"倉庫・運輸関連業","d":205.0},"9368":{"s":"倉庫・運輸関連業","d":34.0},"9381":{"s":"倉庫・運輸関連業","d":100.0},"9513":{"s":"電気・ガス業","d":100.0},"9769":{"s":"サービス業","d":103.0},"9795":{"s":"サービス業","d":89.0},"9986":{"s":"卸売業","d":105.0},"208A":{"s":"情報・通信業","d":90.0},"HDV":{"s":"米国ETF","d":128.0},"SPYD":{"s":"米国ETF","d":321.0},"VYM":{"s":"米国ETF","d":567.0}};  // 管理シート由来の銘柄マスタ（業種・配当単価）。マネフォ貼付時の自動補完に使用
 const HD_PAY_MONTHS = {"1343":[3,6,9,12],"1489":[2,5,8,11],"1723":[6,12],"1928":[4,10],"1951":[6,12],"1976":[6,12],"1980":[6,12],"2003":[6,12],"2124":[3],"2169":[3,9],"2296":[3,6,9,12],"2317":[6,12],"2391":[4,10],"2393":[6],"2659":[5],"3003":[3,9],"3076":[3,9],"3231":[6,12],"3333":[5,11],"3771":[6],"3817":[6,12],"3834":[6,12],"4008":[6,12],"4042":[6,12],"4248":[3,9],"4345":[6,12],"4401":[6,12],"4540":[6,12],"4641":[3,9],"4752":[6],"4832":[6,12],"5186":[6,12],"5334":[6,12],"5388":[6,12],"5464":[6,12],"6073":[6,12],"6345":[6,12],"6381":[6,12],"6432":[5],"6458":[6,12],"6539":[6],"6652":[6,12],"6785":[3,9],"7292":[6,12],"7438":[6,12],"7483":[6,12],"7723":[6,12],"7749":[6,12],"7820":[6,12],"7921":[2,8],"7931":[6,12],"7989":[3,9],"7994":[6,12],"8058":[6,12],"8130":[6,12],"8309":[6,12],"8584":[6,12],"8593":[6,12],"8725":[6,12],"9057":[6,12],"9069":[6,12],"9233":[6,12],"9303":[6,12],"9304":[6,12],"9364":[6,12],"9368":[6,12],"9381":[5,11],"9513":[6,12],"9769":[6,12],"9795":[6,12],"9986":[6,12],"208A":[3,6,9,12],"HDV":[3,6,9,12],"SPYD":[3,6,9,12],"VYM":[3,6,9,12]};
+/** 銘柄コード→銘柄名（内蔵DB由来）。手入力で銘柄を足したときの名前補完に使う */
+const HD_NAME = {};
+/* 内蔵銘柄DB（stock_master.js）を HD_MASTER / HD_PAY_MONTHS に統合する。
+   日本の全上場銘柄＋ETF（約4,000）の業種・1株配当・権利確定月を持つので、
+   新しく買った銘柄でも「未設定」にならない。DBの読込に失敗しても、
+   上で定義した保有75銘柄分の内蔵マスタでこれまで通り動作する。
+   更新手順: python3 tools/build_stock_master.py */
+(function mergeStockDb(){
+  if(typeof window.STOCK_DB_RAW!=='string') return;
+  const sec=window.STOCK_DB_SEC||[];
+  for(const line of window.STOCK_DB_RAW.split('\n')){
+    const f=line.split('|'); if(f.length<5) continue;
+    const code=f[0], s=sec[parseInt(f[2],16)]||'', d=parseFloat(f[3])||0, mask=parseInt(f[4],16)||0;
+    if(f[1]) HD_NAME[code]=f[1];
+    if(s) HD_MASTER[code]={s,d};
+    const months=[]; for(let i=0;i<12;i++) if(mask>>i&1) months.push(i+1);
+    if(months.length) HD_PAY_MONTHS[code]=months;
+  }
+})();
 function hdIsForeign(sector){ return /米国|米ドル|海外|外国/.test(sector||''); }
 /** 業種→景気感応度（スプレッドシート「設定」タブのルールを移行）。業種を選べば景気区分は自動 */
 const HD_SECTOR_CYC = {"水産・農林業":"ディフェンシブ","建設業":"景気敏感","不動産業":"景気敏感","非鉄金属":"景気敏感","鉱業":"景気敏感","サービス業":"ディフェンシブ","機械":"景気敏感","金属製品":"ディフェンシブ","情報・通信業":"ディフェンシブ","食料品":"ディフェンシブ","医薬品":"ディフェンシブ","陸運業":"ディフェンシブ","その他金融業":"景気敏感","小売業":"景気敏感","卸売業":"景気敏感","化学":"景気敏感","繊維製品":"景気敏感","電気機器":"ディフェンシブ","ガラス・土石製品":"景気敏感","証券、商品先物取引業":"景気敏感","輸送用機器":"ディフェンシブ","石油・石炭製品":"景気敏感","パルプ・紙":"景気敏感","精密機器":"景気敏感","ゴム製品":"景気敏感","鉄鋼":"景気敏感","銀行業":"景気敏感","保険業":"景気敏感","その他製品":"ディフェンシブ","倉庫・運輸関連業":"ディフェンシブ","海運業":"景気敏感","空運業":"景気敏感","電気・ガス業":"景気敏感","ETF・他":"ディフェンシブ","米国ETF":"ディフェンシブ","米国個別株":"景気敏感"};
@@ -3318,7 +3343,7 @@ function refreshFromMF(text){
     const cost  = sh? Math.round(a.purSum/sh) : 0;
     if(p[code]){ p[code].shares=sh; p[code].price=price; p[code].cost=cost; if(a.name) p[code].name=a.name; upd++; }
     else {
-      // 新規銘柄は内蔵マスタ（管理シート由来）で業種・配当単価を自動補完
+      // 新規銘柄は内蔵DB（全上場銘柄）で業種・配当単価・権利確定月を自動補完
       const m=(typeof HD_MASTER!=='undefined')?HD_MASTER[code]:null;
       p[code]={name:a.name,sector:m?m.s:'未設定',cyc:m?(HD_SECTOR_CYC[m.s]||''):'',shares:sh,cost,price,dps:m?+m.d:0,months:HD_PAY_MONTHS[code]||[]};
       add++; if(!m) miss.push(code);
@@ -3473,10 +3498,13 @@ function hdManualAdd(){
   if(!HD_CODE_RE.test(code)){ if(res) res.innerHTML='<span style="color:var(--rose);">コードを正しく入力してください（例 1343 / VYM）</span>'; return; }
   const shares=+shEl.value||0, price=+prEl.value||0;
   const p=getPortfolio();
-  if(!p[code]) p[code]={name:(nameEl.value||'').trim()||code,sector:'未設定',cyc:'',shares,cost:price,price,dps:0,months:HD_PAY_MONTHS[code]||[]};
+  const m=HD_MASTER[code];   // 内蔵DBで業種・配当単価・権利確定月・銘柄名を自動補完
+  if(!p[code]) p[code]={name:(nameEl.value||'').trim()||HD_NAME[code]||code,sector:m?m.s:'未設定',cyc:m?(HD_SECTOR_CYC[m.s]||''):'',shares,cost:price,price,dps:m?+m.d:0,months:HD_PAY_MONTHS[code]||[]};
   else { if(shares)p[code].shares=shares; if(price){p[code].price=price; if(!p[code].cost)p[code].cost=price;} if((nameEl.value||'').trim())p[code].name=nameEl.value.trim(); }
   setPortfolio(p); renderHighDiv(); renderDivCompare(); renderHdEditor();
-  if(res) res.innerHTML=`<span style="color:var(--green);font-weight:700;">✅ ${code} を追加。下の表で業種・配当単価を設定してください。</span>`;
+  if(res) res.innerHTML = m
+    ? `<span style="color:var(--green);font-weight:700;">✅ ${code} ${p[code].name} を追加（業種${m.s}・配当${m.d}円を内蔵DBから設定）</span>`
+    : `<span style="color:var(--green);font-weight:700;">✅ ${code} を追加。内蔵DBに無いので下の表で業種・配当単価を設定してください。</span>`;
   codeEl.value=nameEl.value=shEl.value=prEl.value='';
 }
 
@@ -4129,8 +4157,50 @@ function renderHdAllStocks(){
 }
 function yenComma(n){ return Math.round(+n||0).toLocaleString(); }
 
+/** 保有銘柄の空欄（業種・配当単価・権利確定月・銘柄名）を内蔵DBで埋める。
+ *  すでに値が入っている配当単価は、DBと違う場合だけ確認のうえまとめて更新する。 */
+function applyStockDbFill(){
+  const p=getPortfolio(); const codes=Object.keys(p);
+  const res=document.getElementById('hdImportResult');
+  if(!codes.length){ if(res) res.innerHTML='<span style="color:var(--rose);">先に保有銘柄を取り込んでください</span>'; return; }
+  let filled=0; const unknown=[], changed=[];
+  codes.forEach(code=>{
+    const s=p[code]||{}, m=HD_MASTER[code];
+    if(!m){ unknown.push(code); return; }
+    let hit=false;
+    if(!s.sector||s.sector==='未設定'){ s.sector=m.s; s.cyc=HD_SECTOR_CYC[m.s]||''; hit=true; }
+    else if(!s.cyc){ s.cyc=HD_SECTOR_CYC[s.sector]||''; }
+    if(!(+s.dps>0) && +m.d>0){ s.dps=+m.d; hit=true; }
+    else if(+s.dps>0 && +m.d>0 && Math.abs(+s.dps-+m.d)>0.009) changed.push({code,name:s.name||code,from:+s.dps,to:+m.d});
+    if(!(Array.isArray(s.months)&&s.months.length) && (HD_PAY_MONTHS[code]||[]).length){ s.months=HD_PAY_MONTHS[code].slice(); hit=true; }
+    if((!s.name||s.name===code) && HD_NAME[code]){ s.name=HD_NAME[code]; hit=true; }
+    if(hit) filled++;
+  });
+  let updated=0;
+  if(changed.length){
+    const sample=changed.slice(0,8).map(c=>`・${c.name}（${c.code}）${c.from} → ${c.to}円`).join('\n');
+    const more=changed.length>8?`\n…ほか${changed.length-8}銘柄`:'';
+    if(confirm(`配当単価が内蔵DBと違う銘柄が ${changed.length}件あります。DBの値（${window.STOCK_DB_ASOF||''}時点）に更新しますか？\n\n${sample}${more}`)){
+      changed.forEach(c=>{ p[c.code].dps=c.to; }); updated=changed.length;
+    }
+  }
+  setPortfolio(p);
+  if(typeof stampDataMeta==='function') stampDataMeta('portfolio');
+  renderHighDiv(); renderDivCompare(); renderHdEditor();
+  let m=`<span style="color:var(--green);font-weight:700;">✅ 空欄を補完 ${filled}銘柄`;
+  if(updated) m+=` ／ 配当単価を更新 ${updated}銘柄`;
+  m+='</span>';
+  if(!filled&&!updated) m='<span style="color:var(--ink-mute);">補完が必要な銘柄はありませんでした（すべて設定済み）</span>';
+  if(unknown.length) m+=`　<span style="color:var(--amber);">DB未収載 ${unknown.length}件（${unknown.join(', ')}）は手入力してください</span>`;
+  if(res) res.innerHTML=m;
+}
+
 /** 取込UIの初期化 */
 function initHighDiv(){
+  const dbInfo=document.getElementById('stockDbInfo');
+  if(dbInfo) dbInfo.textContent = (typeof window.STOCK_DB_RAW==='string')
+    ? `内蔵DB ${Object.keys(HD_MASTER).length.toLocaleString()}銘柄（${window.STOCK_DB_ASOF||''}時点）`
+    : '⚠ 内蔵DBを読み込めませんでした（保有75銘柄分のみ補完できます）';
   const csv=document.getElementById('hdCsvInput');
   const res=document.getElementById('hdImportResult');
   if(csv) csv.addEventListener('change',(e)=>{
