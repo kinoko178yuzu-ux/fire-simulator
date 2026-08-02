@@ -2640,6 +2640,11 @@ function renderBudgetSheet() {
           ${summaryMonths.map(({bal,hasData},m)=>`<td style="padding:4px 4px;text-align:center;font-weight:700;" data-sbal="${m}">${hasData?fmtV(bal):'–'}</td>`).join('')}
           <td style="padding:4px 4px;text-align:center;" data-sbal-avg>–</td>
         </tr>
+        <tr style="border-top:1px solid var(--teal);">
+          <td style="padding:4px 8px;font-weight:700;">貯蓄率(給与)</td>
+          ${months.map((_,m)=>`<td style="padding:4px 4px;text-align:center;font-weight:700;" data-ssave="${m}">–</td>`).join('')}
+          <td style="padding:4px 4px;text-align:center;font-weight:700;" data-ssave-avg>–</td>
+        </tr>
       </tbody>
     </table>
   </div>`;
@@ -2832,6 +2837,8 @@ function updateBudgetTotals() {
     const inc = BUDGET_INCOME_ROWS.reduce((s,r)=>s+(+budgetRowArr(b,r.key)[m]||0),0);
     const exp = BUDGET_ALL_EXP.reduce((s,r)=>s+(+budgetRowArr(b,r.key)[m]||0),0);
     const bal = inc - exp;
+    const salary = +budgetRowArr(b,'salary')[m] || 0;
+    const saveRate = salary > 0 ? (salary - exp) / salary * 100 : null;
     const hasData = inc > 0 || exp > 0;
     // メインテーブル
     const incEl = host.querySelector(`[data-inc="${m}"]`); if (incEl) incEl.textContent = inc?inc.toFixed(1):'–';
@@ -2843,6 +2850,11 @@ function updateBudgetTotals() {
     const sExp = host.querySelector(`[data-sexp="${m}"]`); if (sExp) sExp.textContent = hasData?exp.toFixed(1):'–';
     const sBal = host.querySelector(`[data-sbal="${m}"]`);
     if (sBal) { sBal.textContent = hasData?bal.toFixed(1):'–'; sBal.style.color = bal<0?'var(--rose)':'var(--teal-deep)'; }
+    const sSave = host.querySelector(`[data-ssave="${m}"]`);
+    if (sSave) {
+      sSave.textContent = saveRate == null ? '–' : `${saveRate.toFixed(0)}%`;
+      sSave.style.color = saveRate == null ? 'var(--ink-mute)' : saveRate >= 20 ? 'var(--green)' : saveRate >= 0 ? 'var(--amber)' : 'var(--rose)';
+    }
   }
   // 月平均合計
   const incAvg = BUDGET_INCOME_ROWS.reduce((s,r)=>s+budgetRowTotal(b,r.key),0)/months;
@@ -2851,9 +2863,16 @@ function updateBudgetTotals() {
   const sIncAvg = host.querySelector('[data-sinc-avg]');
   const sExpAvg = host.querySelector('[data-sexp-avg]');
   const sBalAvg = host.querySelector('[data-sbal-avg]');
+  const sSaveAvg = host.querySelector('[data-ssave-avg]');
   if (sIncAvg) sIncAvg.textContent = incAvg ? incAvg.toFixed(1) : '–';
   if (sExpAvg) sExpAvg.textContent = expAvg ? expAvg.toFixed(1) : '–';
   if (sBalAvg) { const b2 = incAvg - expAvg; sBalAvg.textContent = (incAvg||expAvg) ? b2.toFixed(1) : '–'; sBalAvg.style.color = b2 < 0 ? 'var(--rose)' : 'var(--teal-deep)'; }
+  const salaryAvgForSave = budgetRowTotal(b, 'salary') / months;
+  const saveAvg = salaryAvgForSave > 0 ? (salaryAvgForSave - expAvg) / salaryAvgForSave * 100 : null;
+  if (sSaveAvg) {
+    sSaveAvg.textContent = saveAvg == null ? '–' : `${saveAvg.toFixed(0)}%`;
+    sSaveAvg.style.color = saveAvg == null ? 'var(--ink-mute)' : saveAvg >= 20 ? 'var(--green)' : saveAvg >= 0 ? 'var(--amber)' : 'var(--rose)';
+  }
   const livingAvg = budgetLivingMonthlyAvg(b);
   const set = (sel,val,neg)=>{ const el=host.querySelector(sel); if(el){ el.textContent = val?val.toFixed(1):'–'; if(neg!=null) el.style.color = neg?'var(--rose)':'var(--teal-deep)';}};
   set('[data-inctotal]', incAvg);
