@@ -5991,6 +5991,17 @@ function simulate(params, fireYear, randomReturns = false, collectDetail = false
         total: Math.round(socialIns + Math.max(incTax,0) + Math.max(resTax,0)) };
     } else {
       taxes = calcTaxesAndInsurance(sideNet, ageH, ageW, cAges, params.taxParams, loanCredit, y - fireYear);
+
+      /**
+       * 住民税は前年所得に対して課税される。
+       * FIRE初年度（退職翌年）は現役時の給与所得ベースの住民税を支払い、
+       * 2年目以降にFIRE後の低い所得を反映した住民税へ切り替える。
+       */
+      if (y === fireYear) {
+        const residentTaxAfterSalary = calcResidentTaxFromSalary(params.currentSalary);
+        taxes.total += residentTaxAfterSalary - taxes.residentTax;
+        taxes.residentTax = residentTaxAfterSalary;
+      }
     }
 
     /** 年金（pensionStartAge歳以降） */
