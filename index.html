@@ -1198,6 +1198,7 @@ select:focus { border-color: var(--teal); }
       <button class="btn btn-primary" id="downloadBtn" title="全データをJSONファイルとしてPCに書き出します（バックアップ用）">💾 バックアップ保存</button>
       <button class="btn" id="uploadBtn" title="書き出したバックアップJSONを読み込んで、データを復元します">📂 バックアップ復元</button>
       <button class="btn" id="autoBkBtn" onclick="restoreAutoBackup()" title="毎日自動保存されるバックアップ（直近5日分）から復元します。「初期化」しても消えません">⟲ 自動BK</button>
+      <button class="btn" onclick="restoreInputSettingsFromBackups()" title="現在の履歴データを残したまま、資産・収入・積立などの入力設定だけを復元します">🛟 入力設定を救出</button>
       <button class="btn btn-danger" id="resetBtn" title="すべての入力・取込データを初期値に戻します（自動BKからは復元可能）">初期化</button>
     </div>
     <input type="file" id="fileInput" accept=".json,application/json" style="display:none;">
@@ -4578,6 +4579,62 @@ const inputs = {};
 INPUT_IDS.forEach(id => { inputs[id] = document.getElementById(id); });
 inputs.healthReduceOn = document.getElementById('healthReduceOn');  // チェックボックス（.checkedで扱う・INPUT_IDS対象外）
 
+/** 資産・収入・積立などの入力設定を、蓄積データとは別に保護する。 */
+const SETTINGS_SAFE_KEY='sfs_input_settings_v1';
+const ACCUMULATED_IDS=new Set([
+  'budgetSheetJson','divPortfolioJson','divActualJson','assetHistoryJson','accountHistoryJson',
+  'dataMetaJson','guardrailJson','divPlanHistoryJson'
+]);
+function extractInputSettings(data){
+  const out={};
+  INPUT_IDS.forEach(id=>{ if(!ACCUMULATED_IDS.has(id)&&data&&data[id]!==undefined) out[id]=data[id]; });
+  if(data&&data._loanPayoffToggle!==undefined) out._loanPayoffToggle=data._loanPayoffToggle;
+  if(data&&data._healthReduceOn!==undefined) out._healthReduceOn=data._healthReduceOn;
+  return out;
+}
+function currentInputSettings(){
+  const out={}; INPUT_IDS.forEach(id=>{ if(!ACCUMULATED_IDS.has(id)&&inputs[id]) out[id]=inputs[id].value; });
+  out._loanPayoffToggle=document.querySelector('.toggle-option.active')?.dataset.loanPayoff||'yes';
+  out._healthReduceOn=!inputs.healthReduceOn||inputs.healthReduceOn.checked;
+  return out;
+}
+function settingsScore(s){
+  let n=0;
+  INPUT_IDS.forEach(id=>{
+    if(ACCUMULATED_IDS.has(id)||!inputs[id]||s[id]===undefined) return;
+    if(String(s[id])!==String(inputs[id].defaultValue||'')) n++;
+  });
+  try{ const a=JSON.parse(s.spotEventsJson||'[]'); n+=Array.isArray(a)?a.length:0; }catch{}
+  try{ const b=JSON.parse(s.bucketListJson||'{}'); n+=b&&b.items?b.items.filter(x=>+x.cost||x.done).length:0; }catch{}
+  return n;
+}
+function saveInputSettingsSafe(){
+  try{ localStorage.setItem(SETTINGS_SAFE_KEY,JSON.stringify(currentInputSettings())); }catch{}
+}
+function safestInputSettings(incoming){
+  let safe={}; try{safe=JSON.parse(localStorage.getItem(SETTINGS_SAFE_KEY)||'{}');}catch{}
+  const inc=extractInputSettings(incoming||{});
+  return settingsScore(safe)>settingsScore(inc)?{...inc,...safe}:inc;
+}
+function applyInputSettings(s){
+  INPUT_IDS.forEach(id=>{ if(!ACCUMULATED_IDS.has(id)&&s[id]!==undefined&&inputs[id]) inputs[id].value=s[id]; });
+  if(s._loanPayoffToggle){ document.querySelectorAll('.toggle-option').forEach(b=>b.classList.remove('active')); document.querySelector(`[data-loan-payoff="${s._loanPayoffToggle}"]`)?.classList.add('active'); }
+  if(inputs.healthReduceOn&&s._healthReduceOn!==undefined) inputs.healthReduceOn.checked=!!s._healthReduceOn;
+}
+/** 現在の蓄積データを維持し、自動BKから最も作り込まれた入力設定だけを復元する。 */
+function restoreInputSettingsFromBackups(){
+  let list=[]; try{list=JSON.parse(localStorage.getItem('sfs_autobk')||'[]');}catch{}
+  const candidates=list.map(x=>{try{const d=JSON.parse(x.data||'{}');return{date:x.date,s:extractInputSettings(d),score:settingsScore(extractInputSettings(d))};}catch{return null;}}).filter(Boolean);
+  if(!candidates.length){alert('自動バックアップ内に入力設定が見つかりませんでした。');return;}
+  candidates.sort((a,b)=>a.score-b.score||String(a.date).localeCompare(String(b.date)));
+  const best=candidates[candidates.length-1];
+  if(best.score===0){alert('初期値ではない入力設定をバックアップから見つけられませんでした。');return;}
+  try{localStorage.setItem('sfs_before_settings_recovery',JSON.stringify({date:new Date().toISOString(),settings:currentInputSettings()}));}catch{}
+  applyInputSettings(best.s); saveInputSettingsSafe(); saveDataSilent();
+  if(typeof renderSpotEvents==='function')renderSpotEvents(); if(typeof renderBudgetSheet==='function')renderBudgetSheet(); calculate();
+  alert(`${best.date} のバックアップから、資産・収入・積立などの入力設定を復旧しました。MF収支・株式・配当・月次資産履歴は変更していません。`);
+}
+
 /** ====================================
  *  ★NEW ライフイベント・プランナー UI 管理
  *  （旧「計画購入」を拡張: 収入/支出・西暦/年齢・繰返し対応）
@@ -5256,7 +5313,9 @@ function loadData() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) { showToast('保存データがありません'); return; }
     const data = JSON.parse(raw);
+    const protectedSettings=safestInputSettings(data);
     INPUT_IDS.forEach(id => { if (data[id] !== undefined && inputs[id]) inputs[id].value = data[id]; });
+    applyInputSettings(protectedSettings);
     if (inputs.budgetSheetJson) {
       const loadedBudget=(()=>{try{return JSON.parse(data.budgetSheetJson||'{}');}catch{return {};}})();
       const mergedBudget=mergeBudgets(loadedBudget,getBudget());
@@ -5270,6 +5329,7 @@ function loadData() {
       document.querySelector(`[data-loan-payoff="${data._loanPayoffToggle}"]`)?.classList.add('active');
     }
     if (inputs.healthReduceOn && data._healthReduceOn !== undefined) inputs.healthReduceOn.checked = !!data._healthReduceOn;
+    applyInputSettings(protectedSettings);
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
     if (typeof renderSpotEvents === 'function') renderSpotEvents();
     if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
@@ -5383,7 +5443,9 @@ function applyAllData(data) {
   try {
     const localHistory=getAccountHistory();
     const localBudget=getBudget();
+    const protectedSettings=safestInputSettings(data);
     INPUT_IDS.forEach(id => { if (data[id] !== undefined && inputs[id]) inputs[id].value = data[id]; });
+    applyInputSettings(protectedSettings);
     // クラウド同期でもMF収支を置換せず、年・月単位で統合する
     if(inputs.budgetSheetJson){
       let cloudBudget={}; try{cloudBudget=JSON.parse(data.budgetSheetJson||'{}');}catch{}
@@ -5403,6 +5465,7 @@ function applyAllData(data) {
       document.querySelector(`[data-loan-payoff="${data._loanPayoffToggle}"]`)?.classList.add('active');
     }
     if (inputs.healthReduceOn && data._healthReduceOn !== undefined) inputs.healthReduceOn.checked = !!data._healthReduceOn;
+    applyInputSettings(protectedSettings);
     document.getElementById('customYearField').style.display = inputs.payoffTiming.value === 'custom_year' ? 'block' : 'none';
     if (typeof renderSpotEvents === 'function') renderSpotEvents();  // ライフイベントリストを再描画
     if (typeof renderBudgetSheet === 'function') renderBudgetSheet();
@@ -7467,8 +7530,8 @@ function debouncedSave() {
 }
 for (const id of INPUT_IDS) {
   if (inputs[id]) {
-    inputs[id].addEventListener('input',  () => { _userDirty = true; calculate(); debouncedSave(); });
-    inputs[id].addEventListener('change', () => { _userDirty = true; calculate(); debouncedSave(); });
+    inputs[id].addEventListener('input',  () => { _userDirty = true; saveInputSettingsSafe(); calculate(); debouncedSave(); });
+    inputs[id].addEventListener('change', () => { _userDirty = true; saveInputSettingsSafe(); calculate(); debouncedSave(); });
   }
 }
 document.getElementById('runSimBtn').addEventListener('click', runSimulation);
