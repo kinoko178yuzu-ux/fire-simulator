@@ -1916,6 +1916,7 @@ select:focus { border-color: var(--teal); }
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
           <button type="button" id="btnMfAssetFetch" onclick="mfAssetFetch()" style="font-size:13px;padding:6px 16px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📥 マネフォから資産を取得</button>
+          <button type="button" onclick="recoverAccountHistoryFromBackups()" style="font-size:13px;padding:6px 14px;background:#fff;color:var(--teal-deep);border:1px solid var(--teal);border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">⟲ 過去の月次履歴を救出</button>
           <span class="pf-freshness" style="font-size:12px;color:var(--ink-mute);"></span>
           <span id="mfAssetStatus" class="mf-asset-status" style="font-size:12.5px;min-height:18px;"></span>
         </div>
@@ -3673,8 +3674,38 @@ async function brokerFetch(broker) {
  * ★NEW マネフォ資産取得（口座残高＋株式＋投信 → 月次記録＆ポートフォリオ更新）
  * accountHistoryJson = { "YYYY-MM": {date,total,cash,stockPL,fundPL,exPL,accounts:{口座名:円}} }
  * ========================================================== */
-function getAccountHistory(){ try{ const o=JSON.parse(document.getElementById('accountHistoryJson').value||'{}'); return (o&&typeof o==='object')?o:{}; }catch{ return {}; } }
-function setAccountHistory(h){ document.getElementById('accountHistoryJson').value=JSON.stringify(h); if(typeof debouncedSave==='function'&&!isApplyingCloud) debouncedSave(); if(typeof renderAssetTimeline==='function') renderAssetTimeline(); }
+const ACCOUNT_HISTORY_SAFE_KEY='sfs_account_history_v1';
+function parseAccountHistory(raw){ try{ const o=JSON.parse(raw||'{}'); return (o&&typeof o==='object'&&!Array.isArray(o))?o:{}; }catch{ return {}; } }
+function mergeAccountHistories(...items){
+  const out={};
+  items.forEach(h=>Object.keys(h||{}).sort().forEach(ym=>{ if(/^\d{4}-\d{2}$/.test(ym)&&h[ym]) out[ym]=h[ym]; }));
+  return out;
+}
+function getAccountHistory(){
+  const input=parseAccountHistory((document.getElementById('accountHistoryJson')||{}).value);
+  let safe={}; try{ safe=parseAccountHistory(localStorage.getItem(ACCOUNT_HISTORY_SAFE_KEY)); }catch{}
+  return mergeAccountHistories(safe,input); // 既存月を消さず、画面側の同月データを優先
+}
+function setAccountHistory(h){
+  const merged=mergeAccountHistories(getAccountHistory(),h);
+  document.getElementById('accountHistoryJson').value=JSON.stringify(merged);
+  try{ localStorage.setItem(ACCOUNT_HISTORY_SAFE_KEY,JSON.stringify(merged)); }catch{}
+  if(typeof debouncedSave==='function'&&!isApplyingCloud) debouncedSave();
+  if(typeof renderAssetTimeline==='function') renderAssetTimeline();
+}
+/** 現在の設定を巻き戻さず、自動BK群から月次資産履歴だけを統合して救出する */
+function recoverAccountHistoryFromBackups(){
+  const before=getAccountHistory(); let merged={...before}, scanned=0;
+  try{
+    const list=JSON.parse(localStorage.getItem('sfs_autobk')||'[]');
+    list.forEach(b=>{ try{ const d=JSON.parse(b.data||'{}'); const h=parseAccountHistory(d.accountHistoryJson); scanned+=Object.keys(h).length; merged=mergeAccountHistories(h,merged); }catch{} });
+  }catch{}
+  const added=Object.keys(merged).filter(k=>!before[k]).length;
+  if(!added){ alert(scanned?'バックアップを確認しましたが、現在より古い月次履歴は見つかりませんでした。':'自動バックアップ内に月次履歴が見つかりませんでした。'); return; }
+  try{ localStorage.setItem('sfs_before_history_recovery',JSON.stringify({date:new Date().toISOString(),history:before})); }catch{}
+  setAccountHistory(merged);
+  alert(`月次資産履歴を ${added}か月分復旧しました。現在の設定・株式・配当データは変更していません。`);
+}
 
 async function mfAssetFetch(){
   const st={ set innerHTML(h){ document.querySelectorAll('.mf-asset-status').forEach(e=>e.innerHTML=h); } };  // 資産推移カードとSTEP1の両方に表示
@@ -5118,6 +5149,8 @@ let _clobberWarned = false;
 function saveDataSilent() {
   const data = {};
   INPUT_IDS.forEach(id => { data[id] = inputs[id].value; });
+  // 月次履歴は通常入力とは別の退避領域とも統合し、欠落した画面からの保存で消さない
+  data.accountHistoryJson = JSON.stringify(getAccountHistory());
   data._loanPayoffToggle = document.querySelector('.toggle-option.active')?.dataset.loanPayoff || 'yes';
   data._healthReduceOn = !inputs.healthReduceOn || inputs.healthReduceOn.checked;
   // ★NEW 多重タブ保護：内容の薄いこのタブが、別タブの蓄積データを消すのを防ぐ
@@ -5132,7 +5165,7 @@ function saveDataSilent() {
   autoBackupTick();
 }
 
-/** ★NEW 日次自動バックアップ（別キー保存＝「初期化」ボタンでは消えない。直近5日分保持） */
+/** 日次自動バックアップ（別キー保存＝「初期化」ボタンでは消えない。直近30日分保持） */
 function autoBackupTick() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY); if (!raw) return;
@@ -5140,7 +5173,7 @@ function autoBackupTick() {
     let list = JSON.parse(localStorage.getItem('sfs_autobk') || '[]');
     if (list.length && list[list.length - 1].date === today) list[list.length - 1].data = raw;
     else list.push({ date: today, data: raw });
-    while (list.length > 5) list.shift();
+    while (list.length > 30) list.shift();
     localStorage.setItem('sfs_autobk', JSON.stringify(list));
   } catch {}
 }
@@ -5177,6 +5210,8 @@ function loadData() {
     if (!raw) { showToast('保存データがありません'); return; }
     const data = JSON.parse(raw);
     INPUT_IDS.forEach(id => { if (data[id] !== undefined && inputs[id]) inputs[id].value = data[id]; });
+    // 専用退避領域の月次履歴を必ず再統合（アプリ更新・同期で履歴だけ欠けても復元）
+    if (inputs.accountHistoryJson) inputs.accountHistoryJson.value = JSON.stringify(getAccountHistory());
     if (data._loanPayoffToggle) {
       document.querySelectorAll('.toggle-option').forEach(b => b.classList.remove('active'));
       document.querySelector(`[data-loan-payoff="${data._loanPayoffToggle}"]`)?.classList.add('active');
@@ -5189,6 +5224,7 @@ function loadData() {
     if (typeof renderHighDiv === 'function') renderHighDiv();
     if (typeof renderHdEditor === 'function') renderHdEditor();
     if (typeof renderAssetHistory === 'function') renderAssetHistory();
+    if (typeof renderAssetTimeline === 'function') renderAssetTimeline();
     calculate(); showToast('読み込みました');
   } catch(e) { showToast('読込に失敗'); }
 }
@@ -5282,6 +5318,7 @@ function hashPassphrase(str) {
 function gatherAllData() {
   const data = {};
   INPUT_IDS.forEach(id => { if (inputs[id]) data[id] = inputs[id].value; });
+  data.accountHistoryJson = JSON.stringify(getAccountHistory());
   data._loanPayoffToggle = document.querySelector('.toggle-option.active')?.dataset.loanPayoff || 'yes';
   data._healthReduceOn = !inputs.healthReduceOn || inputs.healthReduceOn.checked;
   return data;
@@ -5290,7 +5327,15 @@ function gatherAllData() {
 function applyAllData(data) {
   isApplyingCloud = true;
   try {
+    const localHistory=getAccountHistory();
     INPUT_IDS.forEach(id => { if (data[id] !== undefined && inputs[id]) inputs[id].value = data[id]; });
+    // クラウド同期は月次履歴を置換せず月単位で統合する
+    if(inputs.accountHistoryJson){
+      const cloudHistory=parseAccountHistory(data.accountHistoryJson);
+      const mergedHistory=mergeAccountHistories(cloudHistory,localHistory);
+      inputs.accountHistoryJson.value=JSON.stringify(mergedHistory);
+      try{ localStorage.setItem(ACCOUNT_HISTORY_SAFE_KEY,JSON.stringify(mergedHistory)); }catch{}
+    }
     if (data._loanPayoffToggle) {
       document.querySelectorAll('.toggle-option').forEach(b => b.classList.remove('active'));
       document.querySelector(`[data-loan-payoff="${data._loanPayoffToggle}"]`)?.classList.add('active');
@@ -5303,6 +5348,7 @@ function applyAllData(data) {
     if (typeof renderHighDiv === 'function') renderHighDiv();
     if (typeof renderHdEditor === 'function') renderHdEditor();
     if (typeof renderAssetHistory === 'function') renderAssetHistory();
+    if (typeof renderAssetTimeline === 'function') renderAssetTimeline();
     calculate();
   } finally {
     isApplyingCloud = false;
