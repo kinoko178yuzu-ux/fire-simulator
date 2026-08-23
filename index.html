@@ -1978,6 +1978,7 @@ select:focus { border-color: var(--teal); }
             </span>
             <span id="mfSpanCount" style="font-size:12.5px;color:var(--ink-mute);min-width:40px;"></span>
             <button type="button" id="mfAutoBtn" style="padding:7px 14px;background:var(--teal);color:#fff;border:none;border-radius:4px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">▶ 取込開始</button>
+            <button type="button" onclick="recoverBudgetFromBackups()" style="padding:7px 14px;background:#fff;color:var(--rose);border:1px solid var(--rose);border-radius:4px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;">⟲ MF収支データを救出</button>
             <span id="mfBridgeStatus" style="font-size:12.5px;color:var(--ink-mute);">🔌 連携スクリプト未検出</span>
           </div>
           <div id="mfAutoResult" style="font-size:13px;margin-top:6px;"></div>
@@ -2485,6 +2486,7 @@ function parseCSV(text) {
 
 /** budgetSheetJson の読み書き。v2形式: { _v:2, 2025:{rowKey:[12],_mfMeta:{},_mfDetail:{}}, ... } */
 let activeBudgetYear = new Date().getFullYear();
+const BUDGET_SAFE_KEY = 'sfs_budget_history_v1';
 
 function migrateBudget(b) {
   if (!b || typeof b !== 'object') return { _v: 2 };
@@ -2505,16 +2507,59 @@ function migrateBudget(b) {
   return { _v: 2, [yr]: ydata };
 }
 
+/** 年・月単位で統合。MF取込済み月は0円の費目も含めて新しい側を優先する。 */
+function mergeBudgets(...sources) {
+  const out={_v:2};
+  sources.forEach(src=>{
+    const b=migrateBudget(src&&typeof src==='object'?src:{});
+    budgetYears(b).forEach(yr=>{
+      const incoming=b[yr]||{}, dest=out[yr]||(out[yr]={});
+      const inMeta=incoming._mfMeta||{}, oldMeta=dest._mfMeta||{};
+      const keys=new Set([...Object.keys(dest),...Object.keys(incoming)]);
+      keys.forEach(k=>{
+        if(k.startsWith('_')) return;
+        const oldArr=Array.isArray(dest[k])?dest[k].slice():new Array(12).fill(0);
+        const newArr=Array.isArray(incoming[k])?incoming[k]:[];
+        for(let m=0;m<12;m++){
+          if(inMeta[m]!==undefined || (+newArr[m]||0)!==0) oldArr[m]=+newArr[m]||0;
+        }
+        dest[k]=oldArr;
+      });
+      dest._mfMeta={...oldMeta,...inMeta};
+      dest._mfDetail={...(dest._mfDetail||{}),...(incoming._mfDetail||{})};
+    });
+  });
+  return out;
+}
+
 function getBudget() {
   try {
     const o = JSON.parse(document.getElementById('budgetSheetJson').value || '{}');
-    const m = migrateBudget(o && typeof o === 'object' ? o : {});
+    let safe={}; try{ safe=JSON.parse(localStorage.getItem(BUDGET_SAFE_KEY)||'{}'); }catch{}
+    const m = mergeBudgets(safe, o && typeof o === 'object' ? o : {});
     if (m !== o) document.getElementById('budgetSheetJson').value = JSON.stringify(m);
     return m;
   } catch { return { _v: 2 }; }
 }
 function setBudget(b) {
-  document.getElementById('budgetSheetJson').value = JSON.stringify(b);
+  const merged=mergeBudgets(getBudget(),b);
+  document.getElementById('budgetSheetJson').value = JSON.stringify(merged);
+  try{ localStorage.setItem(BUDGET_SAFE_KEY,JSON.stringify(merged)); }catch{}
+}
+/** 現在の他データを変えず、自動バックアップ群からMF年間収支だけを救出する。 */
+function recoverBudgetFromBackups(){
+  const before=getBudget(); let merged=before, scanned=0;
+  try{
+    const list=JSON.parse(localStorage.getItem('sfs_autobk')||'[]');
+    list.forEach(b=>{ try{ const d=JSON.parse(b.data||'{}'); const old=JSON.parse(d.budgetSheetJson||'{}'); scanned+=budgetYears(migrateBudget(old)).length; merged=mergeBudgets(old,merged); }catch{} });
+  }catch{}
+  const countMonths=b=>budgetYears(b).reduce((n,y)=>n+Object.keys((b[y]||{})._mfMeta||{}).length,0);
+  const added=Math.max(countMonths(merged)-countMonths(before),0);
+  if(!added){ alert(scanned?'バックアップを確認しましたが、現在より古いMF取込月は見つかりませんでした。':'自動バックアップ内にMF収支データが見つかりませんでした。'); return; }
+  try{ localStorage.setItem('sfs_before_budget_recovery',JSON.stringify({date:new Date().toISOString(),budget:before})); }catch{}
+  setBudget(merged); activeBudgetYear=Math.max(...budgetYears(merged));
+  renderBudgetSheet(); calculate(); if(typeof debouncedSave==='function') debouncedSave();
+  alert(`マネーフォワード収支データを ${added}か月分復旧しました。現在の株式・配当・資産履歴・設定は変更していません。`);
 }
 /** 保存済み年の一覧（昇順） */
 function budgetYears(b) {
@@ -5149,6 +5194,8 @@ let _clobberWarned = false;
 function saveDataSilent() {
   const data = {};
   INPUT_IDS.forEach(id => { data[id] = inputs[id].value; });
+  // MF年間収支は専用退避領域とも統合し、空の画面から保存して消さない
+  data.budgetSheetJson = JSON.stringify(getBudget());
   // 月次履歴は通常入力とは別の退避領域とも統合し、欠落した画面からの保存で消さない
   data.accountHistoryJson = JSON.stringify(getAccountHistory());
   data._loanPayoffToggle = document.querySelector('.toggle-option.active')?.dataset.loanPayoff || 'yes';
@@ -5210,6 +5257,12 @@ function loadData() {
     if (!raw) { showToast('保存データがありません'); return; }
     const data = JSON.parse(raw);
     INPUT_IDS.forEach(id => { if (data[id] !== undefined && inputs[id]) inputs[id].value = data[id]; });
+    if (inputs.budgetSheetJson) {
+      const loadedBudget=(()=>{try{return JSON.parse(data.budgetSheetJson||'{}');}catch{return {};}})();
+      const mergedBudget=mergeBudgets(loadedBudget,getBudget());
+      inputs.budgetSheetJson.value=JSON.stringify(mergedBudget);
+      try{localStorage.setItem(BUDGET_SAFE_KEY,JSON.stringify(mergedBudget));}catch{}
+    }
     // 専用退避領域の月次履歴を必ず再統合（アプリ更新・同期で履歴だけ欠けても復元）
     if (inputs.accountHistoryJson) inputs.accountHistoryJson.value = JSON.stringify(getAccountHistory());
     if (data._loanPayoffToggle) {
@@ -5318,6 +5371,7 @@ function hashPassphrase(str) {
 function gatherAllData() {
   const data = {};
   INPUT_IDS.forEach(id => { if (inputs[id]) data[id] = inputs[id].value; });
+  data.budgetSheetJson = JSON.stringify(getBudget());
   data.accountHistoryJson = JSON.stringify(getAccountHistory());
   data._loanPayoffToggle = document.querySelector('.toggle-option.active')?.dataset.loanPayoff || 'yes';
   data._healthReduceOn = !inputs.healthReduceOn || inputs.healthReduceOn.checked;
@@ -5328,7 +5382,15 @@ function applyAllData(data) {
   isApplyingCloud = true;
   try {
     const localHistory=getAccountHistory();
+    const localBudget=getBudget();
     INPUT_IDS.forEach(id => { if (data[id] !== undefined && inputs[id]) inputs[id].value = data[id]; });
+    // クラウド同期でもMF収支を置換せず、年・月単位で統合する
+    if(inputs.budgetSheetJson){
+      let cloudBudget={}; try{cloudBudget=JSON.parse(data.budgetSheetJson||'{}');}catch{}
+      const mergedBudget=mergeBudgets(cloudBudget,localBudget);
+      inputs.budgetSheetJson.value=JSON.stringify(mergedBudget);
+      try{localStorage.setItem(BUDGET_SAFE_KEY,JSON.stringify(mergedBudget));}catch{}
+    }
     // クラウド同期は月次履歴を置換せず月単位で統合する
     if(inputs.accountHistoryJson){
       const cloudHistory=parseAccountHistory(data.accountHistoryJson);
