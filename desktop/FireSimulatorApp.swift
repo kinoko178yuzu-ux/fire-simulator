@@ -212,8 +212,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private func importNewestPendingFile() {
         guard let downloads=FileManager.default.urls(for:.downloadsDirectory,in:.userDomainMask).first,
               let files=try? FileManager.default.contentsOfDirectory(at:downloads,includingPropertiesForKeys:[.contentModificationDateKey]) else { return }
-        let found=files.filter{$0.lastPathComponent.hasPrefix("fire_import_") && $0.pathExtension=="json"}.compactMap{ u -> (URL,Date)? in let d=(try? u.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate) ?? .distantPast; return (u,d) }.max{$0.1 < $1.1}
-        guard let url=found?.0,UserDefaults.standard.string(forKey:"lastImportedBridgeFile") != url.path,applyBridgeFile(url) else { return }
+        var imported=Set(UserDefaults.standard.stringArray(forKey:"importedBridgeFiles") ?? [])
+        let candidates=files.filter{$0.lastPathComponent.hasPrefix("fire_import_") && $0.pathExtension=="json" && !imported.contains($0.path)}.sorted{$0.lastPathComponent < $1.lastPathComponent}
+        var applied=0
+        for url in candidates { if applyBridgeFile(url,notify:false) { imported.insert(url.path); applied += 1 } }
+        UserDefaults.standard.set(Array(Array(imported).suffix(100)),forKey:"importedBridgeFiles")
+        if applied > 0 { let a=NSAlert(); a.messageText="月次データを反映しました"; a.informativeText="未反映だった取得ファイルを\(applied)件取り込みました。"; a.runModal() }
     }
 
     private func openInChrome(_ address:String) {
@@ -244,20 +248,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let a=NSAlert(); a.messageText="Chrome版のデータを取り込みました"; a.informativeText="画面を更新し、SQLiteにも自動保存しました。"; a.runModal()
     }
 
-    private func applyBridgeFile(_ url:URL)->Bool {
+    private func applyBridgeFile(_ url:URL,notify:Bool=true)->Bool {
         guard let data=try? Data(contentsOf:url),let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { return false }
-        let ok=applyBridgeObject(object); if ok { UserDefaults.standard.set(url.path,forKey:"lastImportedBridgeFile") }; return ok
+        return applyBridgeObject(object,notify:notify)
     }
 
-    private func applyBridgeObject(_ object:[String:Any])->Bool {
+    private func applyBridgeObject(_ object:[String:Any],notify:Bool=true)->Bool {
         guard let type=object["_bridgeType"] as? String,let payload=object["data"],let payloadData=try? JSONSerialization.data(withJSONObject:payload),let payloadJSON=String(data:payloadData,encoding:.utf8) else { return false }
         let script:String, item:String
         if type=="mf-budget" { script="document.dispatchEvent(new CustomEvent('mf-export-result',{detail:\(payloadJSON)}));"; item="マネーフォワード家計簿" }
         else if type=="mf-asset" { script="mfAssetApply(\(payloadJSON));"; item="マネーフォワード資産" }
         else if type=="broker",let broker=object["broker"] as? String,let label=object["label"] as? String,["sbi","rakuten"].contains(broker),["私","妻"].contains(label) { script="_brokerFetchLabels['\(broker)']='\(label)';_brokerImport({broker:'\(broker)',...\(payloadJSON)});"; item=broker=="sbi" ? "SBI証券" : (label=="妻" ? "楽天証券（奥様）":"楽天証券（本人）") }
         else { return false }
-        webView.evaluateJavaScript(script); store.setImportStatus(month:targetMonth(),item:item,completed:true)
-        let a=NSAlert(); a.messageText="取込が完了しました"; a.informativeText="取得結果をアプリへ反映し、SQLiteへ保存しました。"; a.runModal(); return true
+        webView.evaluateJavaScript(script){ [weak self] _,error in
+            guard error == nil else { return }
+            DispatchQueue.main.asyncAfter(deadline:.now()+2){
+                self?.webView.evaluateJavaScript("localStorage.getItem('sideFireCalculator_v4')"){ value,_ in
+                    if let value=value as? String { self?.store.save(key:"sideFireCalculator_v4",value:value) }
+                }
+            }
+        }
+        store.setImportStatus(month:targetMonth(),item:item,completed:true)
+        if notify { let a=NSAlert(); a.messageText="取込が完了しました"; a.informativeText="取得結果をアプリへ反映し、SQLiteへ保存しました。"; a.runModal() }; return true
     }
 
     private func bootstrapScript(_ values: [String: String]) -> String {
