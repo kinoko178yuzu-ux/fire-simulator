@@ -18,6 +18,7 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>FireSimulator</string>
   <key>CFBundleIdentifier</key><string>jp.kinoko.fire-simulator</string>
   <key>CFBundleName</key><string>Fire Simulator</string>
+  <key>CFBundleDisplayName</key><string>資産管理 Fire Simulator</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>

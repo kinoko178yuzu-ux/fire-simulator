@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SQLite3
+import UserNotifications
 import WebKit
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -23,6 +24,7 @@ final class StateDatabase {
         exec("PRAGMA journal_mode=WAL")
         exec("CREATE TABLE IF NOT EXISTS app_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)")
         exec("CREATE TABLE IF NOT EXISTS state_backups (id INTEGER PRIMARY KEY AUTOINCREMENT, key TEXT NOT NULL, value TEXT NOT NULL, created_at TEXT NOT NULL)")
+        exec("CREATE TABLE IF NOT EXISTS monthly_imports (target_month TEXT NOT NULL, item TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL, PRIMARY KEY(target_month,item))")
     }
 
     deinit { sqlite3_close(db) }
@@ -63,12 +65,31 @@ final class StateDatabase {
         sqlite3_step(stmt); sqlite3_finalize(stmt)
         exec("DELETE FROM state_backups WHERE id NOT IN (SELECT id FROM state_backups WHERE key='\(key)' ORDER BY id DESC LIMIT 100) AND key='\(key)'")
     }
+
+    func importStatus(month: String) -> [String: Bool] {
+        var result: [String: Bool] = [:]; var stmt: OpaquePointer?
+        sqlite3_prepare_v2(db, "SELECT item,completed FROM monthly_imports WHERE target_month=?", -1, &stmt, nil)
+        sqlite3_bind_text(stmt, 1, month, -1, SQLITE_TRANSIENT); defer { sqlite3_finalize(stmt) }
+        while sqlite3_step(stmt) == SQLITE_ROW, let item = sqlite3_column_text(stmt, 0) {
+            result[String(cString:item)] = sqlite3_column_int(stmt, 1) == 1
+        }
+        return result
+    }
+
+    func setImportStatus(month: String, item: String, completed: Bool) {
+        var stmt: OpaquePointer?; let now=ISO8601DateFormatter().string(from:Date())
+        sqlite3_prepare_v2(db, "INSERT INTO monthly_imports(target_month,item,completed,updated_at) VALUES(?,?,?,?) ON CONFLICT(target_month,item) DO UPDATE SET completed=excluded.completed,updated_at=excluded.updated_at", -1, &stmt, nil)
+        sqlite3_bind_text(stmt,1,month,-1,SQLITE_TRANSIENT); sqlite3_bind_text(stmt,2,item,-1,SQLITE_TRANSIENT)
+        sqlite3_bind_int(stmt,3,completed ? 1:0); sqlite3_bind_text(stmt,4,now,-1,SQLITE_TRANSIENT)
+        sqlite3_step(stmt); sqlite3_finalize(stmt)
+    }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var store: StateDatabase!
+    private let importItems = ["マネーフォワード家計簿", "マネーフォワード資産", "SBI証券", "楽天証券（本人）", "楽天証券（奥様）"]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         do { store = try StateDatabase() } catch { fatalError("Database initialization failed: \(error)") }
@@ -79,12 +100,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         webView = WKWebView(frame: .zero, configuration: config)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 920), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "資産管理 — Fire Simulator"
-        window.contentView = webView; window.center(); window.makeKeyAndOrderFront(nil)
+        let container=NSView(); window.contentView=container
+        let bar=NSStackView(); bar.orientation = .horizontal; bar.spacing=8; bar.edgeInsets=NSEdgeInsets(top:8,left:10,bottom:8,right:10)
+        let checklist=NSButton(title:"✅ 月次取込チェック",target:self,action:#selector(openChecklist)); checklist.bezelStyle = .rounded
+        let settings=NSButton(title:"⚙️ 通知設定",target:self,action:#selector(openReminderSettings)); settings.bezelStyle = .rounded
+        bar.addArrangedSubview(checklist); bar.addArrangedSubview(settings); bar.addArrangedSubview(NSView())
+        [bar,webView].forEach{$0.translatesAutoresizingMaskIntoConstraints=false;container.addSubview($0)}
+        NSLayoutConstraint.activate([bar.topAnchor.constraint(equalTo:container.topAnchor),bar.leadingAnchor.constraint(equalTo:container.leadingAnchor),bar.trailingAnchor.constraint(equalTo:container.trailingAnchor),bar.heightAnchor.constraint(equalToConstant:48),webView.topAnchor.constraint(equalTo:bar.bottomAnchor),webView.leadingAnchor.constraint(equalTo:container.leadingAnchor),webView.trailingAnchor.constraint(equalTo:container.trailingAnchor),webView.bottomAnchor.constraint(equalTo:container.bottomAnchor)])
+        window.center(); window.makeKeyAndOrderFront(nil)
         guard let webRoot = Bundle.main.resourceURL?.appendingPathComponent("web"), FileManager.default.fileExists(atPath: webRoot.appendingPathComponent("index.html").path) else {
             fatalError("Bundled web assets are missing")
         }
         webView.loadFileURL(webRoot.appendingPathComponent("index.html"), allowingReadAccessTo: webRoot)
         NSApp.activate(ignoringOtherApps: true)
+        configureReminder()
+    }
+
+    private func targetMonth() -> String {
+        let d=Calendar.current.date(byAdding:.month,value:-1,to:Date())!; let f=DateFormatter(); f.dateFormat="yyyy-MM"; return f.string(from:d)
+    }
+
+    private func configureReminder() {
+        UNUserNotificationCenter.current().requestAuthorization(options:[.alert,.sound]) { ok,_ in if ok { self.scheduleReminder() } }
+    }
+
+    private func scheduleReminder() {
+        let defaults=UserDefaults.standard, day=max(1,min(28,defaults.integer(forKey:"reminderDay") == 0 ? 5:defaults.integer(forKey:"reminderDay")))
+        let hour=defaults.object(forKey:"reminderHour") == nil ? 9:defaults.integer(forKey:"reminderHour")
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers:["monthly-csv-reminder"])
+        var c=DateComponents(); c.day=day; c.hour=hour; c.minute=0
+        let content=UNMutableNotificationContent(); content.title="資産管理データの更新日です"; content.body="マネーフォワード、SBI証券、楽天証券2口座の前月分を確認してください。"; content.sound = .default
+        let req=UNNotificationRequest(identifier:"monthly-csv-reminder",content:content,trigger:UNCalendarNotificationTrigger(dateMatching:c,repeats:true))
+        UNUserNotificationCenter.current().add(req)
+    }
+
+    @objc private func openReminderSettings() {
+        let alert=NSAlert(); alert.messageText="CSV取込の通知設定"; alert.informativeText="毎月指定日にMacへ通知します（1〜28日）。"
+        let form=NSStackView(); form.orientation = .vertical; form.spacing=8; form.frame=NSRect(x:0,y:0,width:280,height:70)
+        let day=NSTextField(string:String(UserDefaults.standard.integer(forKey:"reminderDay") == 0 ? 5:UserDefaults.standard.integer(forKey:"reminderDay")))
+        let hour=NSTextField(string:String(UserDefaults.standard.object(forKey:"reminderHour") == nil ? 9:UserDefaults.standard.integer(forKey:"reminderHour")))
+        let row1=NSStackView(views:[NSTextField(labelWithString:"毎月の日付"),day,NSTextField(labelWithString:"日")]); row1.spacing=8
+        let row2=NSStackView(views:[NSTextField(labelWithString:"通知時刻"),hour,NSTextField(labelWithString:"時")]); row2.spacing=8
+        form.addArrangedSubview(row1); form.addArrangedSubview(row2); alert.accessoryView=form; alert.addButton(withTitle:"保存"); alert.addButton(withTitle:"キャンセル")
+        if alert.runModal() == .alertFirstButtonReturn {
+            UserDefaults.standard.set(max(1,min(28,day.integerValue)),forKey:"reminderDay"); UserDefaults.standard.set(max(0,min(23,hour.integerValue)),forKey:"reminderHour"); scheduleReminder()
+        }
+    }
+
+    @objc private func openChecklist() {
+        let month=targetMonth(), status=store.importStatus(month:month), alert=NSAlert(); alert.messageText="\(month)分の取込チェック"; alert.informativeText="完了した項目にチェックしてください。未完了があれば毎月の通知で確認できます。"
+        let stack=NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing=7; stack.frame=NSRect(x:0,y:0,width:330,height:145)
+        var boxes:[NSButton]=[]
+        for item in importItems { let b=NSButton(checkboxWithTitle:item,target:nil,action:nil); b.state=status[item] == true ? .on:.off; boxes.append(b); stack.addArrangedSubview(b) }
+        alert.accessoryView=stack; alert.addButton(withTitle:"保存"); alert.addButton(withTitle:"閉じる")
+        if alert.runModal() == .alertFirstButtonReturn { for (i,b) in boxes.enumerated(){store.setImportStatus(month:month,item:importItems[i],completed:b.state == .on)} }
     }
 
     private func bootstrapScript(_ values: [String: String]) -> String {
