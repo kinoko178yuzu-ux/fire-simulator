@@ -7,6 +7,7 @@ import WebKit
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 private let appName = "資産管理アプリ"
+private let dataFolderName = "Fire Simulator" // 表示名を変えても既存SQLiteの場所は固定
 private let storageKeys = [
     "sideFireCalculator_v4", "sfs_autobk", "sfs_account_history_v1",
     "sfs_budget_history_v1", "sfs_input_settings_v1"
@@ -18,7 +19,7 @@ final class StateDatabase {
 
     init() throws {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(appName, isDirectory: true)
+            .appendingPathComponent(dataFolderName, isDirectory: true)
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         url = support.appendingPathComponent("fire_simulator.sqlite3")
         guard sqlite3_open(url.path, &db) == SQLITE_OK else { throw NSError(domain: appName, code: 1) }
@@ -86,10 +87,13 @@ final class StateDatabase {
     }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var monthlyWindow: NSWindow?
+    private var importWatchTimer:Timer?
+    private var importWatchStarted=Date.distantPast
+    private var pendingAction=""
     private var store: StateDatabase!
     private let importItems = ["マネーフォワード家計簿", "マネーフォワード資産", "SBI証券", "楽天証券（本人）", "楽天証券（奥様）"]
 
@@ -101,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         controller.addUserScript(WKUserScript(source: bootstrapScript(store.loadAll()), injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let config = WKWebViewConfiguration(); config.userContentController = controller
         webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate=self
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 920), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "資産管理アプリ"
         let container=NSView(); window.contentView=container
@@ -187,7 +192,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             "rakuten-self":"https://member.rakuten-sec.co.jp/#fire-desktop-rakuten=self",
             "rakuten-spouse":"https://member.rakuten-sec.co.jp/#fire-desktop-rakuten=spouse"
         ]
-        if let url=urls[action] { openInChrome(url) }
+        if let url=urls[action] { startWatchingImport(action); openInChrome(url) }
+    }
+
+    private func startWatchingImport(_ action:String) {
+        pendingAction=action; importWatchStarted=Date(); importWatchTimer?.invalidate()
+        importWatchTimer=Timer.scheduledTimer(withTimeInterval:2,repeats:true){ [weak self] _ in self?.detectGeneratedImport() }
+    }
+
+    private func detectGeneratedImport() {
+        let prefixes=["mf-budget":"fire_import_mf_budget_","mf-asset":"fire_import_mf_asset_","sbi":"fire_import_sbi_","rakuten-self":"fire_import_rakuten_私_","rakuten-spouse":"fire_import_rakuten_妻_"]
+        guard let prefix=prefixes[pendingAction],let downloads=FileManager.default.urls(for:.downloadsDirectory,in:.userDomainMask).first,
+              let files=try? FileManager.default.contentsOfDirectory(at:downloads,includingPropertiesForKeys:[.contentModificationDateKey]) else { return }
+        let found=files.filter{$0.lastPathComponent.hasPrefix(prefix)}.compactMap{ u -> (URL,Date)? in let d=(try? u.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate) ?? .distantPast; return d >= importWatchStarted.addingTimeInterval(-1) ? (u,d):nil }.max{$0.1 < $1.1}
+        guard let url=found?.0,applyBridgeFile(url) else { return }
+        importWatchTimer?.invalidate(); importWatchTimer=nil
+    }
+
+    private func importNewestPendingFile() {
+        guard let downloads=FileManager.default.urls(for:.downloadsDirectory,in:.userDomainMask).first,
+              let files=try? FileManager.default.contentsOfDirectory(at:downloads,includingPropertiesForKeys:[.contentModificationDateKey]) else { return }
+        let found=files.filter{$0.lastPathComponent.hasPrefix("fire_import_") && $0.pathExtension=="json"}.compactMap{ u -> (URL,Date)? in let d=(try? u.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate) ?? .distantPast; return (u,d) }.max{$0.1 < $1.1}
+        guard let url=found?.0,UserDefaults.standard.string(forKey:"lastImportedBridgeFile") != url.path,applyBridgeFile(url) else { return }
     }
 
     private func openInChrome(_ address:String) {
@@ -210,20 +236,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             if panel.url != nil { let a=NSAlert(); a.messageText="バックアップを読み込めません"; a.informativeText="Chrome版の「バックアップ保存」で作成したJSONを選んでください。"; a.runModal() }
             return
         }
-        if let type=object["_bridgeType"] as? String,let payload=object["data"],let payloadData=try? JSONSerialization.data(withJSONObject:payload),let payloadJSON=String(data:payloadData,encoding:.utf8) {
-            let script:String
-            if type=="mf-budget" { script="document.dispatchEvent(new CustomEvent('mf-export-result',{detail:\(payloadJSON)}));" }
-            else if type=="mf-asset" { script="mfAssetApply(\(payloadJSON));" }
-            else if type=="broker",let broker=object["broker"] as? String,let label=object["label"] as? String, ["sbi","rakuten"].contains(broker),["私","妻"].contains(label) { script="_brokerFetchLabels['\(broker)']='\(label)';_brokerImport({broker:'\(broker)',...\(payloadJSON)});" }
-            else { let a=NSAlert(); a.messageText="取込ファイルの種類を確認できません"; a.runModal(); return }
-            webView.evaluateJavaScript(script)
-            let a=NSAlert(); a.messageText="取込が完了しました"; a.informativeText="取得結果をSQLiteへ保存しました。"; a.runModal(); return
-        }
+        if object["_bridgeType"] != nil { _=applyBridgeObject(object); return }
         guard object["currentAge"] != nil else { let a=NSAlert(); a.messageText="対応していないJSONファイルです"; a.runModal(); return }
         store.save(key:"sideFireCalculator_v4",value:text)
         let encoded=try! String(data:JSONSerialization.data(withJSONObject:text),encoding:.utf8)!
         webView.evaluateJavaScript("localStorage.setItem('sideFireCalculator_v4', \(encoded)); location.reload();")
         let a=NSAlert(); a.messageText="Chrome版のデータを取り込みました"; a.informativeText="画面を更新し、SQLiteにも自動保存しました。"; a.runModal()
+    }
+
+    private func applyBridgeFile(_ url:URL)->Bool {
+        guard let data=try? Data(contentsOf:url),let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any] else { return false }
+        let ok=applyBridgeObject(object); if ok { UserDefaults.standard.set(url.path,forKey:"lastImportedBridgeFile") }; return ok
+    }
+
+    private func applyBridgeObject(_ object:[String:Any])->Bool {
+        guard let type=object["_bridgeType"] as? String,let payload=object["data"],let payloadData=try? JSONSerialization.data(withJSONObject:payload),let payloadJSON=String(data:payloadData,encoding:.utf8) else { return false }
+        let script:String, item:String
+        if type=="mf-budget" { script="document.dispatchEvent(new CustomEvent('mf-export-result',{detail:\(payloadJSON)}));"; item="マネーフォワード家計簿" }
+        else if type=="mf-asset" { script="mfAssetApply(\(payloadJSON));"; item="マネーフォワード資産" }
+        else if type=="broker",let broker=object["broker"] as? String,let label=object["label"] as? String,["sbi","rakuten"].contains(broker),["私","妻"].contains(label) { script="_brokerFetchLabels['\(broker)']='\(label)';_brokerImport({broker:'\(broker)',...\(payloadJSON)});"; item=broker=="sbi" ? "SBI証券" : (label=="妻" ? "楽天証券（奥様）":"楽天証券（本人）") }
+        else { return false }
+        webView.evaluateJavaScript(script); store.setImportStatus(month:targetMonth(),item:item,completed:true)
+        let a=NSAlert(); a.messageText="取込が完了しました"; a.informativeText="取得結果をアプリへ反映し、SQLiteへ保存しました。"; a.runModal(); return true
     }
 
     private func bootstrapScript(_ values: [String: String]) -> String {
@@ -267,6 +301,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard let body = message.body as? [String: Any], let key = body["key"] as? String, let value = body["value"] as? String else { return }
         store.save(key: key, value: value)
     }
+
+    func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!) { importNewestPendingFile() }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 }
