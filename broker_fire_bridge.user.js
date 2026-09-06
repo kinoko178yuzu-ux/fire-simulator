@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      2.1
+// @version      2.2
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
@@ -39,6 +39,14 @@
     return btoa(s);
   }
 
+  function isRealCsvBuffer(buf) {
+    if (!buf || buf.byteLength <= 100) return false;
+    try {
+      const head = new TextDecoder('utf-8').decode(buf.slice(0, 1024)).trimStart().toLowerCase();
+      return !head.startsWith('<') && !head.includes('<!doctype html') && !head.includes('<html');
+    } catch { return true; }
+  }
+
   function makeBanner(text, color) {
     const el = document.createElement('div');
     el.id = 'fire-broker-banner';
@@ -70,7 +78,7 @@
       W.URL.createObjectURL = function (blob) {
         try {
           blob.arrayBuffer().then(buf => {
-            if (new Uint8Array(buf)[0] !== 0x3C && buf.byteLength > 100) resolve(buf);
+            if (isRealCsvBuffer(buf)) resolve(buf);
           }).catch(() => {});
         } catch {}
         return orig(blob);
@@ -89,8 +97,8 @@
             const hit = /csv|attachment|octet-stream/i.test(ct) || /csv|download/i.test(this._fireUrl || '');
             if (!hit) return;
             const r = this.response;
-            if (r instanceof W.ArrayBuffer || r instanceof ArrayBuffer) { if (r.byteLength > 100) resolve(r); }
-            else if ((W.Blob && r instanceof W.Blob) || r instanceof Blob) r.arrayBuffer().then(b => { if (b.byteLength > 100) resolve(b); });
+            if (r instanceof W.ArrayBuffer || r instanceof ArrayBuffer) { if (isRealCsvBuffer(r)) resolve(r); }
+            else if ((W.Blob && r instanceof W.Blob) || r instanceof Blob) r.arrayBuffer().then(b => { if (isRealCsvBuffer(b)) resolve(b); });
             else if (typeof r === 'string' && looksCsvText(r)) resolve(new TextEncoder().encode(r).buffer);
           } catch {}
         });
@@ -110,7 +118,7 @@
               const ct = (res.headers.get('content-type') || '') + ';' + (res.headers.get('content-disposition') || '');
               if (/csv|attachment|octet-stream/i.test(ct) || /csv|download/i.test(url)) {
                 res.clone().arrayBuffer().then(buf => {
-                  if (buf.byteLength > 100 && new Uint8Array(buf)[0] !== 0x3C) resolve(buf);
+                  if (isRealCsvBuffer(buf)) resolve(buf);
                 }).catch(() => {});
               }
             } catch {}
@@ -176,7 +184,7 @@
     if (btn.tagName === 'A' && btn.href && !/^javascript/i.test(btn.href)) {
       try {
         const r = await fetch(btn.href, { credentials: 'include' });
-        if (r.ok) buf = await r.arrayBuffer();
+        if (r.ok) { const candidate=await r.arrayBuffer(); if(isRealCsvBuffer(candidate)) buf=candidate; }
       } catch {}
     }
 
@@ -201,7 +209,7 @@
                 const r = await fetch(u, { credentials: 'include' });
                 if (r.ok) {
                   const b = await r.arrayBuffer();
-                  if (b.byteLength > 100 && new Uint8Array(b)[0] !== 0x3C) return b;
+                  if (isRealCsvBuffer(b)) return b;
                 }
               } catch {}
             }
