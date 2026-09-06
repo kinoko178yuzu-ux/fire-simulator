@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import SQLite3
+import UniformTypeIdentifiers
 import UserNotifications
 import WebKit
 
@@ -95,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         do { store = try StateDatabase() } catch { fatalError("Database initialization failed: \(error)") }
         let controller = WKUserContentController()
         controller.add(self, name: "fireStore")
+        controller.add(self, name: "desktopBridge")
         controller.addUserScript(WKUserScript(source: bootstrapScript(store.loadAll()), injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let config = WKWebViewConfiguration(); config.userContentController = controller
         webView = WKWebView(frame: .zero, configuration: config)
@@ -104,7 +106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let bar=NSStackView(); bar.orientation = .horizontal; bar.spacing=8; bar.edgeInsets=NSEdgeInsets(top:8,left:10,bottom:8,right:10)
         let checklist=NSButton(title:"✅ 月次取込チェック",target:self,action:#selector(openChecklist)); checklist.bezelStyle = .rounded
         let settings=NSButton(title:"⚙️ 通知設定",target:self,action:#selector(openReminderSettings)); settings.bezelStyle = .rounded
-        bar.addArrangedSubview(checklist); bar.addArrangedSubview(settings); bar.addArrangedSubview(NSView())
+        let chrome=NSButton(title:"🌐 ChromeでMF連携",target:self,action:#selector(openMFInChrome)); chrome.bezelStyle = .rounded
+        let importBackup=NSButton(title:"📥 Chromeのバックアップを取込",target:self,action:#selector(importBrowserBackup)); importBackup.bezelStyle = .rounded
+        bar.addArrangedSubview(checklist); bar.addArrangedSubview(settings); bar.addArrangedSubview(chrome); bar.addArrangedSubview(importBackup); bar.addArrangedSubview(NSView())
         [bar,webView].forEach{$0.translatesAutoresizingMaskIntoConstraints=false;container.addSubview($0)}
         NSLayoutConstraint.activate([bar.topAnchor.constraint(equalTo:container.topAnchor),bar.leadingAnchor.constraint(equalTo:container.leadingAnchor),bar.trailingAnchor.constraint(equalTo:container.trailingAnchor),bar.heightAnchor.constraint(equalToConstant:48),webView.topAnchor.constraint(equalTo:bar.bottomAnchor),webView.leadingAnchor.constraint(equalTo:container.leadingAnchor),webView.trailingAnchor.constraint(equalTo:container.trailingAnchor),webView.bottomAnchor.constraint(equalTo:container.bottomAnchor)])
         window.center(); window.makeKeyAndOrderFront(nil)
@@ -156,6 +160,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if alert.runModal() == .alertFirstButtonReturn { for (i,b) in boxes.enumerated(){store.setImportStatus(month:month,item:importItems[i],completed:b.state == .on)} }
     }
 
+    @objc private func openMFInChrome() {
+        NSWorkspace.shared.open(URL(string: "https://kinoko178yuzu-ux.github.io/fire-simulator/")!)
+    }
+
+    @objc private func importBrowserBackup() {
+        let panel=NSOpenPanel(); panel.title="Chrome版で保存したバックアップを選択"; panel.allowedContentTypes=[.json]; panel.allowsMultipleSelection=false
+        guard panel.runModal() == .OK, let url=panel.url,
+              let data=try? Data(contentsOf:url),
+              let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any],
+              object["currentAge"] != nil,
+              let text=String(data:data,encoding:.utf8) else {
+            if panel.url != nil { let a=NSAlert(); a.messageText="バックアップを読み込めません"; a.informativeText="Chrome版の「バックアップ保存」で作成したJSONを選んでください。"; a.runModal() }
+            return
+        }
+        store.save(key:"sideFireCalculator_v4",value:text)
+        let encoded=try! String(data:JSONSerialization.data(withJSONObject:text),encoding:.utf8)!
+        webView.evaluateJavaScript("localStorage.setItem('sideFireCalculator_v4', \(encoded)); location.reload();")
+        let a=NSAlert(); a.messageText="Chrome版のデータを取り込みました"; a.informativeText="画面を更新し、SQLiteにも自動保存しました。"; a.runModal()
+    }
+
     private func bootstrapScript(_ values: [String: String]) -> String {
         let data = try! JSONSerialization.data(withJSONObject: values)
         let json = String(data: data, encoding: .utf8)!
@@ -171,11 +195,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             if (managed.has(k)) window.webkit.messageHandlers.fireStore.postMessage({key:k,value:String(v)});
           };
           window.__FIRE_DESKTOP__ = true;
+          document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.mf-asset-status').forEach(e => e.innerHTML = '<span style="color:var(--teal-deep);">アプリ版ではChromeを連携窓口として使用します。「マネフォから資産を取得」を押すとChrome版が開きます。</span>');
+            const status = document.getElementById('mfBridgeStatus');
+            if (status) { status.textContent = '🌐 Chrome経由で連携'; status.style.color = 'var(--teal-deep)'; }
+            const brokerStatus = document.getElementById('divBrokerApiStatus');
+            if (brokerStatus) brokerStatus.innerHTML = '<span style="color:var(--teal-deep);">🌐 SBI証券・楽天証券の自動取得はChrome経由で行います。</span>';
+            document.addEventListener('click', ev => {
+              const target = ev.target && ev.target.closest && ev.target.closest('#btnMfAssetFetch,#mfAutoBtn,#btnSbiFetch,#btnRakutenFetch,[onclick*="mfAssetFetch"],a[href$=".user.js"]');
+              if (!target) return;
+              ev.preventDefault(); ev.stopImmediatePropagation();
+              window.webkit.messageHandlers.desktopBridge.postMessage({action:'openChrome'});
+            }, true);
+          });
         })();
         """
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "desktopBridge" {
+            if let body=message.body as? [String:Any], body["action"] as? String == "openChrome" { openMFInChrome() }
+            return
+        }
         guard let body = message.body as? [String: Any], let key = body["key"] as? String, let value = body["value"] as? String else { return }
         store.save(key: key, value: value)
     }
