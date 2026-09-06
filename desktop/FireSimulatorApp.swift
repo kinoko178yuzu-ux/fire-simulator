@@ -89,6 +89,7 @@ final class StateDatabase {
 final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var monthlyWindow: NSWindow?
     private var store: StateDatabase!
     private let importItems = ["マネーフォワード家計簿", "マネーフォワード資産", "SBI証券", "楽天証券（本人）", "楽天証券（奥様）"]
 
@@ -104,11 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         window.title = "資産管理アプリ"
         let container=NSView(); window.contentView=container
         let bar=NSStackView(); bar.orientation = .horizontal; bar.spacing=8; bar.edgeInsets=NSEdgeInsets(top:8,left:10,bottom:8,right:10)
-        let checklist=NSButton(title:"✅ 月次取込チェック",target:self,action:#selector(openChecklist)); checklist.bezelStyle = .rounded
+        let monthly=NSButton(title:"📥 月次データ更新",target:self,action:#selector(openMonthlyUpdate)); monthly.bezelStyle = .rounded
         let settings=NSButton(title:"⚙️ 通知設定",target:self,action:#selector(openReminderSettings)); settings.bezelStyle = .rounded
-        let chrome=NSButton(title:"🌐 ChromeでMF連携",target:self,action:#selector(openMFInChrome)); chrome.bezelStyle = .rounded
         let importBackup=NSButton(title:"📥 Chromeのバックアップを取込",target:self,action:#selector(importBrowserBackup)); importBackup.bezelStyle = .rounded
-        bar.addArrangedSubview(checklist); bar.addArrangedSubview(settings); bar.addArrangedSubview(chrome); bar.addArrangedSubview(importBackup); bar.addArrangedSubview(NSView())
+        bar.addArrangedSubview(monthly); bar.addArrangedSubview(settings); bar.addArrangedSubview(importBackup); bar.addArrangedSubview(NSView())
         [bar,webView].forEach{$0.translatesAutoresizingMaskIntoConstraints=false;container.addSubview($0)}
         NSLayoutConstraint.activate([bar.topAnchor.constraint(equalTo:container.topAnchor),bar.leadingAnchor.constraint(equalTo:container.leadingAnchor),bar.trailingAnchor.constraint(equalTo:container.trailingAnchor),bar.heightAnchor.constraint(equalToConstant:48),webView.topAnchor.constraint(equalTo:bar.bottomAnchor),webView.leadingAnchor.constraint(equalTo:container.leadingAnchor),webView.trailingAnchor.constraint(equalTo:container.trailingAnchor),webView.bottomAnchor.constraint(equalTo:container.bottomAnchor)])
         window.center(); window.makeKeyAndOrderFront(nil)
@@ -160,8 +160,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         if alert.runModal() == .alertFirstButtonReturn { for (i,b) in boxes.enumerated(){store.setImportStatus(month:month,item:importItems[i],completed:b.state == .on)} }
     }
 
+    @objc private func openMonthlyUpdate() {
+        if let monthlyWindow { monthlyWindow.makeKeyAndOrderFront(nil); return }
+        let panel=NSPanel(contentRect:NSRect(x:0,y:0,width:480,height:410),styleMask:[.titled,.closable,.utilityWindow],backing:.buffered,defer:false)
+        panel.title="月次データ更新"; panel.isReleasedWhenClosed=false
+        let stack=NSStackView(); stack.orientation = .vertical; stack.alignment = .leading; stack.spacing=10; stack.edgeInsets=NSEdgeInsets(top:18,left:22,bottom:18,right:22)
+        stack.addArrangedSubview(NSTextField(labelWithString:"前月分のデータを、必要な項目ごとに取り込みます。\nボタンを押すとTampermonkeyが使えるChromeで処理を開始します。"))
+        let actions=[("① マネーフォワード収支","mf-budget"),("② マネーフォワード資産","mf-asset"),("③ SBI証券（本人）","sbi"),("④ 楽天証券（本人）","rakuten-self"),("⑤ 楽天証券（奥様）","rakuten-spouse")]
+        for (title,id) in actions { let b=NSButton(title:title,target:self,action:#selector(runMonthlyAction(_:))); b.identifier=NSUserInterfaceItemIdentifier(id); b.bezelStyle = .rounded; b.widthAnchor.constraint(equalToConstant:260).isActive=true; stack.addArrangedSubview(b) }
+        let check=NSButton(title:"✅ 取込状況を確認・記録",target:self,action:#selector(openChecklist)); check.bezelStyle = .rounded; stack.addArrangedSubview(check)
+        panel.contentView=stack; panel.center(); panel.makeKeyAndOrderFront(nil); monthlyWindow=panel
+    }
+
+    @objc private func runMonthlyAction(_ sender:NSButton) {
+        guard let action=sender.identifier?.rawValue else { return }
+        openInChrome("https://kinoko178yuzu-ux.github.io/fire-simulator/?desktopAction=\(action)#\(action.hasPrefix("mf-") ? (action == "mf-budget" ? "budgetCard" : "assetTimelineCard") : "highDivCard")")
+    }
+
+    private func openInChrome(_ address:String) {
+        guard let url=URL(string:address) else { return }
+        if let chrome=NSWorkspace.shared.urlForApplication(withBundleIdentifier:"com.google.Chrome") {
+            NSWorkspace.shared.open([url],withApplicationAt:chrome,configuration:NSWorkspace.OpenConfiguration())
+        } else { NSWorkspace.shared.open(url) }
+    }
+
     @objc private func openMFInChrome() {
-        NSWorkspace.shared.open(URL(string: "https://kinoko178yuzu-ux.github.io/fire-simulator/?desktopImport=1#assetTimelineCard")!)
+        openInChrome("https://kinoko178yuzu-ux.github.io/fire-simulator/#assetTimelineCard")
     }
 
     @objc private func importBrowserBackup() {
