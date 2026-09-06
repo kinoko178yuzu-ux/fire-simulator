@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         マネフォ資産 → FIREシミュレーター 資産ブリッジ
 // @namespace    fire-simulator-bridge
-// @version      1.1
+// @version      1.2
 // @description  マネーフォワードの資産内訳（預金・株式・投信）を読み取り、FIREシミュレーターへ自動反映する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/mf_asset_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/mf_asset_bridge.user.js
@@ -21,6 +21,11 @@
   const num = (s) => {
     const m = String(s == null ? '' : s).replace(/[,，円\s]/g, '').match(/-?\d+(\.\d+)?/);
     return m ? parseFloat(m[0]) : 0;
+  };
+  const saveDesktopImport=(data)=>{
+    const request=GM_getValue('mfAssetReq',null); if(!request?.desktop) return;
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify({_bridgeType:'mf-asset',data})],{type:'application/json'}));
+    a.download=`fire_import_mf_asset_${new Date().toISOString().slice(0,10)}.json`; (document.body||document.documentElement).appendChild(a); a.click(); a.remove();
   };
 
   /* ============ アプリ側 ============ */
@@ -47,6 +52,7 @@
   }
 
   /* ============ マネフォ側 ============ */
+  if(location.hash.includes('fire-desktop-asset')) GM_setValue('mfAssetReq',{ts:Date.now(),desktop:true});
   const req = GM_getValue('mfAssetReq', null);
   if (!req || Date.now() - req.ts > 10 * 60 * 1000) return;
 
@@ -83,7 +89,7 @@
     // 資産総額が出るまで待つ
     const totalOk = await waitFor(() => /資産総額/.test(document.body.innerText), 20000);
     if (!totalOk) {
-      GM_setValue('mfAssetRes', { error: '資産内訳ページを読み込めませんでした', ts: Date.now() });
+      const result={ error: '資産内訳ページを読み込めませんでした', ts: Date.now() }; saveDesktopImport(result); GM_setValue('mfAssetRes',result);
       banner.style.background = '#b8413d';
       banner.textContent = '❌ 資産内訳ページを読み込めませんでした';
       return;
@@ -121,14 +127,15 @@
     });
 
     if (!total && !cash.length && !stocks.length && !funds.length) {
-      GM_setValue('mfAssetRes', { error: '資産テーブルを読み取れませんでした（ページ構造が変わった可能性）', ts: Date.now() });
+      const result={ error: '資産テーブルを読み取れませんでした（ページ構造が変わった可能性）', ts: Date.now() }; saveDesktopImport(result); GM_setValue('mfAssetRes',result);
       banner.style.background = '#b8413d';
       banner.textContent = '❌ 資産テーブルを読み取れませんでした';
       return;
     }
 
+    const result={ ts: Date.now(), total, cash, stocks, funds }; saveDesktopImport(result);
     GM_deleteValue('mfAssetReq');
-    GM_setValue('mfAssetRes', { ts: Date.now(), total, cash, stocks, funds });
+    GM_setValue('mfAssetRes', result);
     banner.style.background = '#16a34a';
     banner.textContent = `✅ 読み取り完了（現金${cash.length}件・株式${stocks.length}件・投信${funds.length}件）。3秒後にこのタブを閉じます…`;
     setTimeout(() => window.close(), 3000);

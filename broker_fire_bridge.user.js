@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      1.9
+// @version      2.0
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
@@ -23,6 +23,14 @@
   const isSBI     = location.hostname.includes('sbisec.co.jp');
   const isRakuten = location.hostname.includes('rakuten-sec.co.jp');
   const isApp     = !isSBI && !isRakuten;
+  if(isSBI && location.hash.includes('fire-desktop-sbi')) GM_setValue('sbiReq',{ts:Date.now(),desktop:true,label:'私'});
+  if(isRakuten) { const m=location.hash.match(/fire-desktop-rakuten=(self|spouse)/); if(m) GM_setValue('rakutenReq',{ts:Date.now(),desktop:true,label:m[1]==='spouse'?'妻':'私'}); }
+
+  function saveDesktopImport(broker,data) {
+    const request=GM_getValue(broker+'Req',null); if(!request?.desktop) return;
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify({_bridgeType:'broker',broker,label:request.label||'私',data})],{type:'application/json'}));
+    a.download=`fire_import_${broker}_${request.label||'私'}_${new Date().toISOString().slice(0,10)}.json`; (document.body||document.documentElement).appendChild(a); a.click(); a.remove();
+  }
 
   function toB64(buf) {
     const u = new Uint8Array(buf); let s = '';
@@ -301,8 +309,9 @@
       }
 
       const finishSbi = (buf) => {
+        const result={ csv: toB64(buf), ts: Date.now() }; saveDesktopImport('sbi',result);
         GM_deleteValue('sbiReq');
-        GM_setValue('sbiRes', { csv: toB64(buf), ts: Date.now() });
+        GM_setValue('sbiRes', result);
         banner.style.background = '#16a34a';
         banner.textContent = '✅ CSV取得完了。3秒後にこのタブを閉じます…';
         setTimeout(() => window.close(), 3000);
@@ -366,8 +375,9 @@
       try {
         const buf = await downloadCsv(dlPromise);
         if (!buf) throw new Error('CSVボタンが見つかりませんでした');
+        const result={ csv: toB64(buf), ts: Date.now() }; saveDesktopImport('rakuten',result);
         GM_deleteValue('rakutenReq');
-        GM_setValue('rakutenRes', { csv: toB64(buf), ts: Date.now() });
+        GM_setValue('rakutenRes', result);
         banner.style.background = '#16a34a';
         banner.innerHTML = '✅ CSV取得完了。3秒後にこのタブを閉じます…';
         setTimeout(() => window.close(), 3000);

@@ -107,7 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let bar=NSStackView(); bar.orientation = .horizontal; bar.spacing=8; bar.edgeInsets=NSEdgeInsets(top:8,left:10,bottom:8,right:10)
         let monthly=NSButton(title:"📥 月次データ更新",target:self,action:#selector(openMonthlyUpdate)); monthly.bezelStyle = .rounded
         let settings=NSButton(title:"⚙️ 通知設定",target:self,action:#selector(openReminderSettings)); settings.bezelStyle = .rounded
-        let importBackup=NSButton(title:"📥 Chromeのバックアップを取込",target:self,action:#selector(importBrowserBackup)); importBackup.bezelStyle = .rounded
+        let importBackup=NSButton(title:"📂 取得ファイルを反映",target:self,action:#selector(importBrowserBackup)); importBackup.bezelStyle = .rounded
         bar.addArrangedSubview(monthly); bar.addArrangedSubview(settings); bar.addArrangedSubview(importBackup); bar.addArrangedSubview(NSView())
         [bar,webView].forEach{$0.translatesAutoresizingMaskIntoConstraints=false;container.addSubview($0)}
         NSLayoutConstraint.activate([bar.topAnchor.constraint(equalTo:container.topAnchor),bar.leadingAnchor.constraint(equalTo:container.leadingAnchor),bar.trailingAnchor.constraint(equalTo:container.trailingAnchor),bar.heightAnchor.constraint(equalToConstant:48),webView.topAnchor.constraint(equalTo:bar.bottomAnchor),webView.leadingAnchor.constraint(equalTo:container.leadingAnchor),webView.trailingAnchor.constraint(equalTo:container.trailingAnchor),webView.bottomAnchor.constraint(equalTo:container.bottomAnchor)])
@@ -168,13 +168,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         stack.addArrangedSubview(NSTextField(labelWithString:"前月分のデータを、必要な項目ごとに取り込みます。\nボタンを押すとTampermonkeyが使えるChromeで処理を開始します。"))
         let actions=[("① マネーフォワード収支","mf-budget"),("② マネーフォワード資産","mf-asset"),("③ SBI証券（本人）","sbi"),("④ 楽天証券（本人）","rakuten-self"),("⑤ 楽天証券（奥様）","rakuten-spouse")]
         for (title,id) in actions { let b=NSButton(title:title,target:self,action:#selector(runMonthlyAction(_:))); b.identifier=NSUserInterfaceItemIdentifier(id); b.bezelStyle = .rounded; b.widthAnchor.constraint(equalToConstant:260).isActive=true; stack.addArrangedSubview(b) }
+        let apply=NSButton(title:"⑥ 取得ファイルをアプリへ反映",target:self,action:#selector(importBrowserBackup)); apply.bezelStyle = .rounded; apply.widthAnchor.constraint(equalToConstant:260).isActive=true; stack.addArrangedSubview(apply)
         let check=NSButton(title:"✅ 取込状況を確認・記録",target:self,action:#selector(openChecklist)); check.bezelStyle = .rounded; stack.addArrangedSubview(check)
         panel.contentView=stack; panel.center(); panel.makeKeyAndOrderFront(nil); monthlyWindow=panel
     }
 
     @objc private func runMonthlyAction(_ sender:NSButton) {
         guard let action=sender.identifier?.rawValue else { return }
-        openInChrome("https://kinoko178yuzu-ux.github.io/fire-simulator/?desktopAction=\(action)#\(action.hasPrefix("mf-") ? (action == "mf-budget" ? "budgetCard" : "assetTimelineCard") : "highDivCard")")
+        launchMonthlyAction(action)
+    }
+
+    private func launchMonthlyAction(_ action:String) {
+        let prev=Calendar.current.date(byAdding:.month,value:-1,to:Date())!, formatter=DateFormatter(); formatter.dateFormat="yyyy-MM"
+        let urls=[
+            "mf-budget":"https://moneyforward.com/cf#fire-desktop-budget=\(formatter.string(from:prev))",
+            "mf-asset":"https://moneyforward.com/bs/portfolio#fire-desktop-asset",
+            "sbi":"https://site.sbisec.co.jp/#fire-desktop-sbi",
+            "rakuten-self":"https://member.rakuten-sec.co.jp/#fire-desktop-rakuten=self",
+            "rakuten-spouse":"https://member.rakuten-sec.co.jp/#fire-desktop-rakuten=spouse"
+        ]
+        if let url=urls[action] { openInChrome(url) }
     }
 
     private func openInChrome(_ address:String) {
@@ -185,7 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
 
     @objc private func openMFInChrome() {
-        openInChrome("https://kinoko178yuzu-ux.github.io/fire-simulator/#assetTimelineCard")
+        openInChrome("https://moneyforward.com/bs/portfolio#fire-desktop-asset")
     }
 
     @objc private func importBrowserBackup() {
@@ -193,11 +206,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         guard panel.runModal() == .OK, let url=panel.url,
               let data=try? Data(contentsOf:url),
               let object=try? JSONSerialization.jsonObject(with:data) as? [String:Any],
-              object["currentAge"] != nil,
               let text=String(data:data,encoding:.utf8) else {
             if panel.url != nil { let a=NSAlert(); a.messageText="バックアップを読み込めません"; a.informativeText="Chrome版の「バックアップ保存」で作成したJSONを選んでください。"; a.runModal() }
             return
         }
+        if let type=object["_bridgeType"] as? String,let payload=object["data"],let payloadData=try? JSONSerialization.data(withJSONObject:payload),let payloadJSON=String(data:payloadData,encoding:.utf8) {
+            let script:String
+            if type=="mf-budget" { script="document.dispatchEvent(new CustomEvent('mf-export-result',{detail:\(payloadJSON)}));" }
+            else if type=="mf-asset" { script="mfAssetApply(\(payloadJSON));" }
+            else if type=="broker",let broker=object["broker"] as? String,let label=object["label"] as? String, ["sbi","rakuten"].contains(broker),["私","妻"].contains(label) { script="_brokerFetchLabels['\(broker)']='\(label)';_brokerImport({broker:'\(broker)',...\(payloadJSON)});" }
+            else { let a=NSAlert(); a.messageText="取込ファイルの種類を確認できません"; a.runModal(); return }
+            webView.evaluateJavaScript(script)
+            let a=NSAlert(); a.messageText="取込が完了しました"; a.informativeText="取得結果をSQLiteへ保存しました。"; a.runModal(); return
+        }
+        guard object["currentAge"] != nil else { let a=NSAlert(); a.messageText="対応していないJSONファイルです"; a.runModal(); return }
         store.save(key:"sideFireCalculator_v4",value:text)
         let encoded=try! String(data:JSONSerialization.data(withJSONObject:text),encoding:.utf8)!
         webView.evaluateJavaScript("localStorage.setItem('sideFireCalculator_v4', \(encoded)); location.reload();")
@@ -229,7 +251,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
               const target = ev.target && ev.target.closest && ev.target.closest('#btnMfUnifiedFetch,#btnMfAssetFetch,#mfAutoBtn,#btnSbiFetch,#btnRakutenFetch,[onclick*="mfAssetFetch"],a[href$=".user.js"]');
               if (!target) return;
               ev.preventDefault(); ev.stopImmediatePropagation();
-              window.webkit.messageHandlers.desktopBridge.postMessage({action:'openChrome'});
+              let id = target.matches('#mfAutoBtn') ? 'mf-budget' : target.matches('#btnSbiFetch') ? 'sbi' : target.matches('#btnRakutenFetch') ? 'rakuten-self' : 'mf-asset';
+              window.webkit.messageHandlers.desktopBridge.postMessage({action:'monthly',id});
             }, true);
           });
         })();
@@ -238,7 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "desktopBridge" {
-            if let body=message.body as? [String:Any], body["action"] as? String == "openChrome" { openMFInChrome() }
+            if let body=message.body as? [String:Any], body["action"] as? String == "monthly",let id=body["id"] as? String { launchMonthlyAction(id) }
             return
         }
         guard let body = message.body as? [String: Any], let key = body["key"] as? String, let value = body["value"] as? String else { return }

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MF → FIREシミュレーター CSVブリッジ
 // @namespace    fire-simulator-bridge
-// @version      1.3
+// @version      1.4
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/mf_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/mf_fire_bridge.user.js
 // @description  マネーフォワードの家計簿CSVを月ごとに自動取得し、FIREシミュレーターの年間収支シートへ自動反映する
@@ -17,6 +17,11 @@
 (function () {
   'use strict';
   const isMF = location.hostname === 'moneyforward.com';
+  const saveDesktopImport=(data,request)=>{
+    if(!request?.desktop) return; const a=document.createElement('a');
+    a.href=URL.createObjectURL(new Blob([JSON.stringify({_bridgeType:'mf-budget',data})],{type:'application/json'}));
+    a.download=`fire_import_mf_budget_${new Date().toISOString().slice(0,10)}.json`; (document.body||document.documentElement).appendChild(a); a.click(); a.remove();
+  };
 
   /** ArrayBuffer → base64（Shift-JISのバイト列をそのまま運ぶ） */
   function toB64(buf) {
@@ -58,6 +63,8 @@
     }
   } else {
     /* ============ マネーフォワード側 ============ */
+    const direct=location.hash.match(/fire-desktop-budget=(\d{4}-\d{2})/);
+    if(direct) GM_setValue('mfReq',{months:[direct[1]],ts:Date.now(),desktop:true});
     const req = GM_getValue('mfReq', null);
     if (!req || Date.now() - req.ts > 10 * 60 * 1000) {
       sessionStorage.removeItem('mf_bridge_state');
@@ -199,8 +206,9 @@
 
       /* ── Phase 4: 結果を送信してタブを閉じる ───────── */
       sessionStorage.removeItem(SS_KEY);
+      const result={ items, errors, ts: Date.now() }; saveDesktopImport(result,req);
       GM_deleteValue('mfReq');
-      GM_setValue('mfRes', { items, errors, ts: Date.now() });
+      GM_setValue('mfRes', result);
       banner.style.background = errors.length ? '#b8413d' : '#16a34a';
       if (errors.length) {
         banner.textContent = `⚠ 一部失敗: ${errors.join(' / ')}（成功 ${items.length}件は反映されます）`;
