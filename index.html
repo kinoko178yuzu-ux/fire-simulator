@@ -4339,9 +4339,21 @@ function renderHdAllStocks(){
     renderHdAllStocks(); }));
   host.querySelectorAll('.hd-seccell').forEach(td=>td.addEventListener('click',()=>{ _hdFilter.sector=td.dataset.s; renderHdAllStocks(); }));
   const fs=host.querySelector('#hdFltSector'); if(fs) fs.addEventListener('change',()=>{ _hdFilter.sector=fs.value; renderHdAllStocks(); });
-  const ft=host.querySelector('#hdFltText'); if(ft) ft.addEventListener('input',()=>{ _hdFilter.text=ft.value.trim(); renderHdAllStocks(); const el=host.querySelector('#hdFltText'); if(el){ el.focus(); el.setSelectionRange(el.value.length,el.value.length); } });
+  const ft=host.querySelector('#hdFltText'); if(ft){
+    let composing=false;
+    ft.addEventListener('compositionstart',()=>{ composing=true; });
+    ft.addEventListener('compositionend',()=>{ composing=false; _hdFilter.text=ft.value.trim(); renderHdAllStocks(); const el=host.querySelector('#hdFltText'); if(el){ el.focus(); el.setSelectionRange(el.value.length,el.value.length); } });
+    ft.addEventListener('input',()=>{ if(composing)return; _hdFilter.text=ft.value.trim(); renderHdAllStocks(); const el=host.querySelector('#hdFltText'); if(el){ el.focus(); el.setSelectionRange(el.value.length,el.value.length); } });
+  }
   const fc=host.querySelector('#hdFltClear'); if(fc) fc.addEventListener('click',()=>{ _hdFilter={sector:'',text:''}; renderHdAllStocks(); });
 }
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==='f' && document.getElementById('hdAllStocks')){
+    e.preventDefault();
+    const details=document.getElementById('hdAllDetails'); if(details) details.open=true;
+    const field=document.getElementById('hdFltText'); if(field){ field.focus(); field.select(); }
+  }
+});
 function yenComma(n){ return Math.round(+n||0).toLocaleString(); }
 
 /** 保有銘柄の空欄（業種・配当単価・権利確定月・銘柄名）を内蔵DBで埋める。
