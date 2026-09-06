@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      2.3
+// @version      2.4
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
@@ -363,6 +363,26 @@
 
     const dlPromise = interceptDownload();
 
+    // ログイン後のホーム画面から、楽天サイト自身のメニュー処理を使って
+    // 「配当・分配金」へ移動する。URL直打ちはセッション切れになるため使わない。
+    const isRakutenDividendPage = () =>
+      location.pathname.includes('/app/ass_dividend_history.do') ||
+      !!document.getElementById('yearFrom');
+    if (!isRakutenDividendPage()) {
+      const dividendLink = [...document.querySelectorAll('a')].find(a =>
+        (a.getAttribute('onclick') || '').includes('/app/ass_dividend_history.do') ||
+        (a.textContent || '').trim() === '配当・分配金');
+      if (dividendLink) {
+        const navKey = 'fireRakutenNav_' + req.ts;
+        if (!sessionStorage.getItem(navKey)) {
+          sessionStorage.setItem(navKey, '1');
+          const navBanner = makeBanner('FIREシミュレーター連携: 配当・分配金ページへ移動中…');
+          setTimeout(() => fullClick(dividendLink), 400);
+          return;
+        }
+      }
+    }
+
     // 配当画面に到達したら、アプリ指定の直近1年を設定して「表示する」まで自動実行。
     // CSV保存だけはユーザーがクリックする。
     const fields=['yearFrom','monthFrom','dayFrom','yearTo','monthTo','dayTo'];
@@ -392,7 +412,7 @@
       'font-size:13px;font-weight:700;text-align:center;font-family:sans-serif;' +
       'box-shadow:0 2px 8px rgba(0,0,0,.25);line-height:1.5;';
     banner.innerHTML =
-      'FIREシミュレーター連携 — 下記の手順でCSVを出力してください（明細が表示されると自動で取込みます）<br>' +
+      'FIREシミュレーター連携 — 配当画面への移動または期間設定を準備しています<br>' +
       '<span style="font-weight:400;font-size:12px;">' +
       '① 右上 <b>マイメニュー</b> → ② <b>配当・分配金</b> → ③ 期間を選んで <b>照会／表示</b> → ④ 明細の <b>「CSVで保存」</b> が見えればOK' +
       '</span>';
