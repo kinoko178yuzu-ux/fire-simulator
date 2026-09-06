@@ -161,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
 
     @objc private func openMFInChrome() {
-        NSWorkspace.shared.open(URL(string: "https://kinoko178yuzu-ux.github.io/fire-simulator/")!)
+        NSWorkspace.shared.open(URL(string: "https://kinoko178yuzu-ux.github.io/fire-simulator/?desktopImport=1#assetTimelineCard")!)
     }
 
     @objc private func importBrowserBackup() {
@@ -202,7 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             const brokerStatus = document.getElementById('divBrokerApiStatus');
             if (brokerStatus) brokerStatus.innerHTML = '<span style="color:var(--teal-deep);">🌐 SBI証券・楽天証券の自動取得はChrome経由で行います。</span>';
             document.addEventListener('click', ev => {
-              const target = ev.target && ev.target.closest && ev.target.closest('#btnMfAssetFetch,#mfAutoBtn,#btnSbiFetch,#btnRakutenFetch,[onclick*="mfAssetFetch"],a[href$=".user.js"]');
+              const target = ev.target && ev.target.closest && ev.target.closest('#btnMfUnifiedFetch,#btnMfAssetFetch,#mfAutoBtn,#btnSbiFetch,#btnRakutenFetch,[onclick*="mfAssetFetch"],a[href$=".user.js"]');
               if (!target) return;
               ev.preventDefault(); ev.stopImmediatePropagation();
               window.webkit.messageHandlers.desktopBridge.postMessage({action:'openChrome'});

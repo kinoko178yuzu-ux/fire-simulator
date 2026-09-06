@@ -1916,7 +1916,8 @@ select:focus { border-color: var(--teal); }
           ボタンを押すとマネフォの資産内訳ページが開き、<strong>全口座の残高・株式・投信を自動で読み取って月次記録</strong>します（同じ月に再取得すると上書き）。手動集計シートの置き換えです。株式データはポートフォリオにも自動反映されるので、<strong>マネフォ貼付も不要になります</strong>。
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
-          <button type="button" id="btnMfAssetFetch" onclick="mfAssetFetch()" style="font-size:13px;padding:6px 16px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📥 マネフォから資産を取得</button>
+          <button type="button" id="btnMfUnifiedFetch" onclick="mfUnifiedFetch()" style="font-size:13px;padding:6px 16px;background:var(--teal-deep);color:#fff;border:none;border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">📥 今月分を一括更新（収支＋資産）</button>
+          <button type="button" id="btnMfAssetFetch" onclick="mfAssetFetch()" style="font-size:12px;padding:5px 12px;background:#fff;color:var(--teal-deep);border:1px solid var(--teal);border-radius:6px;cursor:pointer;font-family:inherit;font-weight:600;">資産だけ再取得</button>
           <button type="button" onclick="recoverAccountHistoryFromBackups()" style="font-size:13px;padding:6px 14px;background:#fff;color:var(--teal-deep);border:1px solid var(--teal);border-radius:6px;cursor:pointer;font-family:inherit;font-weight:700;">⟲ 過去の月次履歴を救出</button>
           <span class="pf-freshness" style="font-size:12px;color:var(--ink-mute);"></span>
           <span id="mfAssetStatus" class="mf-asset-status" style="font-size:12.5px;min-height:18px;"></span>
@@ -3752,6 +3753,40 @@ function recoverAccountHistoryFromBackups(){
   setAccountHistory(merged);
   alert(`月次資産履歴を ${added}か月分復旧しました。現在の設定・株式・配当データは変更していません。`);
 }
+
+/** 前月の家計簿と現在の資産残高を、1回の操作で順番に取得する */
+async function mfUnifiedFetch(){
+  const assetStatus={ set innerHTML(h){ document.querySelectorAll('.mf-asset-status').forEach(e=>e.innerHTML=h); } };
+  const budgetStatus=document.getElementById('mfAutoResult');
+  const prev=new Date(); prev.setMonth(prev.getMonth()-1);
+  const ym=`${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+  const waitReady=(pingEvent,readyEvent,timeout=1800)=>new Promise(resolve=>{
+    let done=false; const finish=v=>{ if(done)return; done=true; document.removeEventListener(readyEvent,onReady); resolve(v); };
+    const onReady=()=>finish(true); document.addEventListener(readyEvent,onReady);
+    document.dispatchEvent(new CustomEvent(pingEvent)); setTimeout(()=>finish(false),timeout);
+  });
+  const [budgetReady,assetReady]=await Promise.all([
+    waitReady('mf-bridge-ping','mf-bridge-ready'),
+    waitReady('mf-asset-ping','mf-asset-ready')
+  ]);
+  if(!budgetReady||!assetReady){
+    const missing=[!budgetReady?'家計簿連携':'',!assetReady?'資産連携':''].filter(Boolean).join('・');
+    const msg=`❌ ${missing}のTampermonkeyスクリプトが見つかりません。`;
+    if(budgetStatus) budgetStatus.innerHTML=`<span style="color:var(--rose);">${msg}</span>`;
+    assetStatus.innerHTML=`<span style="color:var(--rose);">${msg}</span>`; return;
+  }
+  if(budgetStatus) budgetStatus.innerHTML=`<span style="color:var(--teal-deep);">⏳ ${ym}の収支を取得しています…</span>`;
+  assetStatus.innerHTML='<span style="color:var(--ink-mute);">収支取得後に資産残高も自動取得します。</span>';
+  let advanced=false;
+  const startAsset=()=>{ if(advanced)return; advanced=true; document.removeEventListener('mf-export-result',startAsset); assetStatus.innerHTML='<span style="color:var(--teal-deep);">⏳ 続けて資産残高を取得しています…</span>'; document.dispatchEvent(new CustomEvent('mf-asset-request')); };
+  document.addEventListener('mf-export-result',startAsset,{once:true});
+  setTimeout(startAsset,90000);
+  document.dispatchEvent(new CustomEvent('mf-export-request',{detail:{months:[ym]}}));
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  if(new URLSearchParams(location.search).get('desktopImport')==='1') setTimeout(mfUnifiedFetch,900);
+});
 
 async function mfAssetFetch(){
   const st={ set innerHTML(h){ document.querySelectorAll('.mf-asset-status').forEach(e=>e.innerHTML=h); } };  // 資産推移カードとSTEP1の両方に表示
