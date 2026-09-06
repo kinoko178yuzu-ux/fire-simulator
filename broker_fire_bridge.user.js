@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      2.4
+// @version      2.5
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
@@ -361,8 +361,6 @@
     const req = GM_getValue('rakutenReq', null);
     if (!req || Date.now() - req.ts > 10 * 60 * 1000) return;
 
-    const dlPromise = interceptDownload();
-
     // ログイン後のホーム画面から、楽天サイト自身のメニュー処理を使って
     // 「配当・分配金」へ移動する。URL直打ちはセッション切れになるため使わない。
     const isRakutenDividendPage = () =>
@@ -418,30 +416,15 @@
       '</span>';
     (document.body || document.documentElement).appendChild(banner);
 
-    async function captureManualCsv() {
-      banner.style.background = '#0d6e6e';
-      banner.innerHTML = 'FIREシミュレーター連携: CSVを取得中…';
-      try {
-        const buf = await Promise.race([dlPromise,new Promise((_,rej)=>setTimeout(()=>rej(new Error('CSV取得の待機時間を超えました')),60000))]);
-        if (!isRealCsvBuffer(buf)) throw new Error('CSVではない画面データが返されました');
-        const result={ csv: toB64(buf), ts: Date.now() }; saveDesktopImport('rakuten',result);
-        GM_deleteValue('rakutenReq');
-        GM_setValue('rakutenRes', result);
-        banner.style.background = '#16a34a';
-        banner.innerHTML = '✅ CSV取得完了。3秒後にこのタブを閉じます…';
-        setTimeout(() => window.close(), 3000);
-      } catch (e) {
-        GM_setValue('rakutenRes', { error: e.message, ts: Date.now() });
-        banner.style.background = '#b8413d';
-        banner.innerHTML = '❌ ' + e.message + '（明細ページで「CSVで保存」が表示されているか確認してください）';
-      }
-    }
-
     // 明細表示後は、ユーザーが「CSVで保存」を押すまで待つ。
+    // 楽天のCSVはブラウザ内で捕捉せず、デスクトップアプリがDownloadsを直接監視する。
     const armManualCapture=()=>{
       const btn=findCsvBtn(); if(!btn) return false;
       banner.style.background='#d97706'; banner.innerHTML='期間設定と明細表示が完了しました。画面下の「CSVで保存」をクリックしてください。';
-      btn.addEventListener('click',()=>captureManualCsv(),{once:true,capture:true}); return true;
+      btn.addEventListener('click',()=>{
+        banner.style.background='#16a34a';
+        banner.innerHTML='✅ CSV保存を受け付けました。資産管理アプリがダウンロード完了後に自動反映します。';
+      },{capture:true}); return true;
     };
     if(isCsvPage() && armManualCapture()) return;
     const tid=setInterval(()=>{ if(isCsvPage()&&armManualCapture()) clearInterval(tid); },1000);
