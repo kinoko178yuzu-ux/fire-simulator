@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      2.2
+// @version      2.3
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
@@ -24,7 +24,7 @@
   const isRakuten = location.hostname.includes('rakuten-sec.co.jp');
   const isApp     = !isSBI && !isRakuten;
   if(isSBI && location.hash.includes('fire-desktop-sbi')) GM_setValue('sbiReq',{ts:Date.now(),desktop:true,label:'私'});
-  if(isRakuten) { const m=location.hash.match(/fire-desktop-rakuten=(self|spouse)/); if(m) GM_setValue('rakutenReq',{ts:Date.now(),desktop:true,label:m[1]==='spouse'?'妻':'私'}); }
+  if(isRakuten) { const m=location.hash.match(/fire-desktop-rakuten=(self|spouse)/); if(m) { const p=new URLSearchParams(location.hash.split('&').slice(1).join('&')); GM_setValue('rakutenReq',{ts:Date.now(),desktop:true,label:m[1]==='spouse'?'妻':'私',from:p.get('from'),to:p.get('to')}); } }
 
   function saveDesktopImport(broker,data) {
     const request=GM_getValue(broker+'Req',null); if(!request?.desktop) return;
@@ -363,6 +363,23 @@
 
     const dlPromise = interceptDownload();
 
+    // 配当画面に到達したら、アプリ指定の直近1年を設定して「表示する」まで自動実行。
+    // CSV保存だけはユーザーがクリックする。
+    const fields=['yearFrom','monthFrom','dayFrom','yearTo','monthTo','dayTo'];
+    const dateParts=s=>String(s||'').split('-');
+    const preparedKey='fireRakutenPrepared_'+req.ts;
+    if(req.from && req.to && fields.every(id=>document.getElementById(id)) && !sessionStorage.getItem(preparedKey)) {
+      try {
+        const W=(typeof unsafeWindow!=='undefined'&&unsafeWindow)?unsafeWindow:window;
+        if(typeof W.termDesignateClick==='function') W.termDesignateClick('5');
+        const f=dateParts(req.from),t=dateParts(req.to),values=[f[0],f[1],f[2],t[0],t[1],t[2]];
+        fields.forEach((id,i)=>{ const el=document.getElementById(id); el.value=values[i]; el.dispatchEvent(new Event('change',{bubbles:true})); });
+        sessionStorage.setItem(preparedKey,'1');
+        const show=document.querySelector('input[type="image"][onclick*="clickSearch"]');
+        if(show){ setTimeout(()=>fullClick(show),400); return; }
+      } catch {}
+    }
+
     // CSV保存ボタン（楽天は「CSVで保存」）が見える配当明細ページか判定
     const isCsvPage = () => !!findCsvBtn() && /(配当|分配金)/.test(document.body?.innerText || '');
 
@@ -381,12 +398,12 @@
       '</span>';
     (document.body || document.documentElement).appendChild(banner);
 
-    async function fetchCsv() {
+    async function captureManualCsv() {
       banner.style.background = '#0d6e6e';
       banner.innerHTML = 'FIREシミュレーター連携: CSVを取得中…';
       try {
-        const buf = await downloadCsv(dlPromise);
-        if (!buf) throw new Error('CSVボタンが見つかりませんでした');
+        const buf = await Promise.race([dlPromise,new Promise((_,rej)=>setTimeout(()=>rej(new Error('CSV取得の待機時間を超えました')),60000))]);
+        if (!isRealCsvBuffer(buf)) throw new Error('CSVではない画面データが返されました');
         const result={ csv: toB64(buf), ts: Date.now() }; saveDesktopImport('rakuten',result);
         GM_deleteValue('rakutenReq');
         GM_setValue('rakutenRes', result);
@@ -400,8 +417,13 @@
       }
     }
 
-    // すでに配当明細ページなら即取得。そうでなければ表示されるまで待つ。
-    if (isCsvPage()) { fetchCsv(); return; }
-    const tid = setInterval(() => { if (isCsvPage()) { clearInterval(tid); fetchCsv(); } }, 1000);
+    // 明細表示後は、ユーザーが「CSVで保存」を押すまで待つ。
+    const armManualCapture=()=>{
+      const btn=findCsvBtn(); if(!btn) return false;
+      banner.style.background='#d97706'; banner.innerHTML='期間設定と明細表示が完了しました。画面下の「CSVで保存」をクリックしてください。';
+      btn.addEventListener('click',()=>captureManualCsv(),{once:true,capture:true}); return true;
+    };
+    if(isCsvPage() && armManualCapture()) return;
+    const tid=setInterval(()=>{ if(isCsvPage()&&armManualCapture()) clearInterval(tid); },1000);
   }
 })();

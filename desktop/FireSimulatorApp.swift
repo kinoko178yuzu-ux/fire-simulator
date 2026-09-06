@@ -185,12 +185,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     private func launchMonthlyAction(_ action:String) {
         let prev=Calendar.current.date(byAdding:.month,value:-1,to:Date())!, formatter=DateFormatter(); formatter.dateFormat="yyyy-MM"
+        let today=Date(), yearAgo=Calendar.current.date(byAdding:.year,value:-1,to:today)!, dateFormatter=DateFormatter(); dateFormatter.dateFormat="yyyy-MM-dd"
+        let rakutenRange="&from=\(dateFormatter.string(from:yearAgo))&to=\(dateFormatter.string(from:today))"
         let urls=[
             "mf-budget":"https://moneyforward.com/cf#fire-desktop-budget=\(formatter.string(from:prev))",
             "mf-asset":"https://moneyforward.com/bs/portfolio#fire-desktop-asset",
             "sbi":"https://site.sbisec.co.jp/#fire-desktop-sbi",
-            "rakuten-self":"https://member.rakuten-sec.co.jp/#fire-desktop-rakuten=self",
-            "rakuten-spouse":"https://member.rakuten-sec.co.jp/#fire-desktop-rakuten=spouse"
+            "rakuten-self":"https://member.rakuten-sec.co.jp/#fire-desktop-rakuten=self\(rakutenRange)",
+            "rakuten-spouse":"https://member.rakuten-sec.co.jp/#fire-desktop-rakuten=spouse\(rakutenRange)"
         ]
         if let url=urls[action] { startWatchingImport(action); openInChrome(url) }
     }
