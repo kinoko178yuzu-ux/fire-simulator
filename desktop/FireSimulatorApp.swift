@@ -5,7 +5,7 @@ import UserNotifications
 import WebKit
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-private let appName = "Fire Simulator"
+private let appName = "資産管理アプリ"
 private let storageKeys = [
     "sideFireCalculator_v4", "sfs_autobk", "sfs_account_history_v1",
     "sfs_budget_history_v1", "sfs_input_settings_v1"
@@ -99,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let config = WKWebViewConfiguration(); config.userContentController = controller
         webView = WKWebView(frame: .zero, configuration: config)
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 920), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "資産管理 — Fire Simulator"
+        window.title = "資産管理アプリ"
         let container=NSView(); window.contentView=container
         let bar=NSStackView(); bar.orientation = .horizontal; bar.spacing=8; bar.edgeInsets=NSEdgeInsets(top:8,left:10,bottom:8,right:10)
         let checklist=NSButton(title:"✅ 月次取込チェック",target:self,action:#selector(openChecklist)); checklist.bezelStyle = .rounded

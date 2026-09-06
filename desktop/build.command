@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$ROOT/dist/Fire Simulator.app"
+APP="$ROOT/dist/資産管理アプリ.app"
 CONTENTS="$APP/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources/web"
@@ -17,8 +17,8 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
 <plist version="1.0"><dict>
   <key>CFBundleExecutable</key><string>FireSimulator</string>
   <key>CFBundleIdentifier</key><string>jp.kinoko.fire-simulator</string>
-  <key>CFBundleName</key><string>Fire Simulator</string>
-  <key>CFBundleDisplayName</key><string>資産管理 Fire Simulator</string>
+  <key>CFBundleName</key><string>資産管理アプリ</string>
+  <key>CFBundleDisplayName</key><string>資産管理アプリ</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
