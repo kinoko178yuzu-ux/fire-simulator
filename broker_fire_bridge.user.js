@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         証券会社 → FIREシミュレーター CSVブリッジ（SBI・楽天）
 // @namespace    fire-simulator-bridge
-// @version      2.0
+// @version      2.1
 // @description  SBI証券・楽天証券の配当CSVをFIREシミュレーターへ自動転送する
 // @updateURL    https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
 // @downloadURL  https://kinoko178yuzu-ux.github.io/fire-simulator/broker_fire_bridge.user.js
@@ -143,7 +143,11 @@
 
   function findCsvBtn() {
     return [...document.querySelectorAll('a[href], button, input[type=button], input[type=submit]')]
-      .find(el => /CSV/i.test(el.textContent || el.value || el.getAttribute('aria-label') || ''));
+      .find(el => {
+        const image=[...el.querySelectorAll('img')].map(img=>`${img.alt||''} ${img.title||''}`).join(' ');
+        const label=[el.textContent,el.value,el.getAttribute('aria-label'),el.getAttribute('title'),image].filter(Boolean).join(' ');
+        return /CSV/i.test(label);
+      });
   }
 
   /** Reactサイト向け：本物のマウス操作に近いイベント列でクリック */
