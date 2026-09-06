@@ -206,9 +206,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let prefixes=["mf-budget":"fire_import_mf_budget_","mf-asset":"fire_import_mf_asset_","sbi":"fire_import_sbi_","rakuten-self":"fire_import_rakuten_私_","rakuten-spouse":"fire_import_rakuten_妻_"]
         guard let prefix=prefixes[pendingAction],let downloads=FileManager.default.urls(for:.downloadsDirectory,in:.userDomainMask).first,
               let files=try? FileManager.default.contentsOfDirectory(at:downloads,includingPropertiesForKeys:[.contentModificationDateKey]) else { return }
-        let found=files.filter{$0.lastPathComponent.hasPrefix(prefix)}.compactMap{ u -> (URL,Date)? in let d=(try? u.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate) ?? .distantPast; return d >= importWatchStarted.addingTimeInterval(-1) ? (u,d):nil }.max{$0.1 < $1.1}
-        guard let url=found?.0,applyBridgeFile(url) else { return }
+        let isRakuten=pendingAction.hasPrefix("rakuten-")
+        let isSBI=pendingAction=="sbi"
+        let found=files.filter { u in
+            let name=u.lastPathComponent
+            return name.hasPrefix(prefix) ||
+                (isRakuten && name.lowercased().hasPrefix("dividendlist_") && u.pathExtension.lowercased()=="csv") ||
+                (isSBI && name.uppercased().hasPrefix("DISTRIBUTION_") && u.pathExtension.lowercased()=="csv")
+        }.compactMap{ u -> (URL,Date)? in let d=(try? u.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate) ?? .distantPast; return d >= importWatchStarted.addingTimeInterval(-1) ? (u,d):nil }.max{$0.1 < $1.1}
+        guard let url=found?.0 else { return }
+        let applied:Bool
+        if url.pathExtension.lowercased()=="csv" {
+            let broker=isRakuten ? "rakuten":"sbi"
+            let label=pendingAction=="rakuten-spouse" ? "妻":"私"
+            applied=applyRawBrokerCSV(url,broker:broker,label:label)
+        } else { applied=applyBridgeFile(url) }
+        guard applied else { return }
         importWatchTimer?.invalidate(); importWatchTimer=nil
+    }
+
+    private func applyRawBrokerCSV(_ url:URL,broker:String,label:String,notify:Bool=true)->Bool {
+        let values=try? url.resourceValues(forKeys:[.contentModificationDateKey,.fileSizeKey])
+        let stamp=values?.contentModificationDate?.timeIntervalSince1970 ?? 0
+        let fingerprint="\(url.path)|\(values?.fileSize ?? 0)|\(stamp)"
+        var imported=Set(UserDefaults.standard.stringArray(forKey:"importedRawBrokerFiles") ?? [])
+        if imported.contains(fingerprint) { return false }
+        guard let csv=try? Data(contentsOf:url),csv.count > 100 else { return false }
+        let object:[String:Any]=[
+            "_bridgeType":"broker", "broker":broker, "label":label,
+            "data":["csv":csv.base64EncodedString(),"ts":Int(Date().timeIntervalSince1970*1000)]
+        ]
+        guard applyBridgeObject(object,notify:notify) else { return false }
+        imported.insert(fingerprint)
+        UserDefaults.standard.set(Array(imported.suffix(100)),forKey:"importedRawBrokerFiles")
+        return true
     }
 
     private func importNewestPendingFile() {
