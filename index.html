@@ -162,6 +162,11 @@ header {
   grid-template-columns: 440px 1fr;
   gap: 22px;
 }
+.layout > *, .results-area, #assetTimelineCard, #assetTimelinePanel {
+  min-width: 0;
+  max-width: 100%;
+}
+.results-area { overflow-x: hidden; }
 @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
 
 /** ========== タブレット ========== */
