@@ -3868,7 +3868,8 @@ function renderAssetTimeline(){
   host.dataset.last=raw;
   const h=getAccountHistory(); const yms=Object.keys(h).filter(k=>/^\d{4}-\d{2}$/.test(k)).sort();
   if(!yms.length){ host.innerHTML='<div style="font-size:12.5px;color:var(--ink-mute);">まだ記録がありません。上のボタンで初回取得すると、口座×月の推移表とグラフが表示されます。</div>'; return; }
-  const show=yms.slice(-13);
+  // 長年蓄積した履歴を欠落させず表示する。表は横スクロール、グラフは目盛りを自動間引きする。
+  const show=yms;
   const latest=h[show[show.length-1]];
   const acctSet=new Set(); show.forEach(m=>Object.keys(h[m].accounts||{}).forEach(a=>acctSet.add(a)));
   const accts=[...acctSet].sort((a,b)=>((latest.accounts||{})[b]||0)-((latest.accounts||{})[a]||0));
