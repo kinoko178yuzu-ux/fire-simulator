@@ -3888,11 +3888,11 @@ function renderAssetTimeline(){
     ${(()=>{ // 今月分が未記録ならリマインダー
       const now=new Date(); const cur=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
       return yms[yms.length-1] < cur ? `<div style="background:#fdf6e9;border:1px solid #d97706;border-radius:6px;padding:7px 12px;margin-bottom:8px;font-size:12.5px;">⏰ <b>今月（${+cur.slice(5)}月）分がまだ記録されていません。</b>上の「📥 マネフォから資産を取得」を押してください。</div>` : ''; })()}
-    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;">
-      <div style="flex:1 1 320px;min-width:0;overflow-x:auto;padding-bottom:6px;">
+    <div style="display:block;width:100%;max-width:100%;overflow:hidden;">
+      <div style="display:block;width:100%;max-width:100%;overflow-x:auto;overflow-y:hidden;padding-bottom:8px;">
         <div style="position:relative;height:240px;min-width:${Math.max(700,show.length*72)}px;"><canvas id="assetTimelineChartCv"></canvas></div>
       </div>
-      <div style="flex:0 1 260px;min-width:220px;">
+      <div style="width:260px;max-width:100%;margin:14px auto 0;">
         <div style="font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:2px;text-align:center;">資産配分（${latest.date||'最新'}）</div>
         <div style="position:relative;height:180px;"><canvas id="assetAllocPieCv"></canvas></div>
         <div id="assetAllocLegend" style="margin-top:6px;"></div>
